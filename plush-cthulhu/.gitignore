@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.blend1
+*.log
+models/*.npz
+renders/
+previews/pose*.png
+previews/sheet*.png

@@ -9,11 +9,14 @@
 
 ## Что внутри
 
+> 📁 Всё лежит в папке [`plush-cthulhu/`](../../tree/main/plush-cthulhu) репозитория.
+> 🌐 Онлайн-вьюер: **https://nas74888425-ui.github.io/models/plush-cthulhu/site/**
+
 | файл | что это |
 |---|---|
-| `plush_cthulhu_animated.glb` | **главный ассет**: меш + скелет (57 костей) + 4 клипа (Idle, Laugh, Cry, Angry), вершинные цвета |
-| `plush_cthulhu.blend` | сцена Blender: модель, риг, NLA-треки, свет, камера |
-| `web/index.html` | интерактивный вьюер (three.js): вращение, кнопки клипов |
+| `models/plush_cthulhu_animated.glb` | **главный ассет**: меш + скелет (57 костей) + 4 клипа (Idle, Laugh, Cry, Angry), вершинные цвета |
+| `models/plush_cthulhu.blend` | сцена Blender: модель, риг, NLA-треки, свет, камера |
+| `site/index.html` | интерактивный вьюер (three.js): вращение, кнопки клипов |
 | `previews/` | рендеры и GIF-превью анимаций |
 | `reference/` | исходный референс |
 | `src/` | весь исходный код модели |
@@ -30,18 +33,20 @@
 30 fps. В GLB клипы лежат как именованные glTF-анимации (`Idle`, `Laugh`, `Cry`, `Angry`),
 в `.blend` — как Actions + NLA-треки.
 
-![laugh](previews/laugh.gif) ![cry](previews/cry.gif) ![angry](previews/angry.gif)
+![laugh](previews/emotions/laugh.gif) ![cry](previews/emotions/cry.gif) ![angry](previews/emotions/angry.gif)
 
 ## Как посмотреть
 
-**Быстро:** откройте `web/index.html` (нужен интернет — three.js грузится с CDN).
-Файл `plush_cthulhu_animated.glb` должен лежать рядом с ним.
+**Онлайн:** https://nas74888425-ui.github.io/models/plush-cthulhu/site/
 
-**В своём движке:** импортируйте `plush_cthulhu_animated.glb` — это обычный glTF 2.0
+**Локально:** откройте `site/index.html` (нужен интернет — three.js грузится с CDN);
+`plush_cthulhu_animated.glb` должен лежать рядом с ним.
+
+**В своём движке:** импортируйте `models/plush_cthulhu_animated.glb` — это обычный glTF 2.0
 со скиннингом и вершинными цветами (`COLOR_0`, материал `felt`).
 Масштаб: 1 юнит = 100 px референса, рост ≈ 3.9 юнита, origin под дном куклы, +Z вверх.
 
-**Blender:** откройте `plush_cthulhu.blend`, анимации — на NLA-дорожках рига `PlushRig`.
+**Blender:** откройте `models/plush_cthulhu.blend`, анимации — на NLA-дорожках рига `PlushRig`.
 
 ## Как это сделано
 
