@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Фетровый Ктулху — 3D модель с анимациями</title>
+<style>
+  :root{
+    --teal:#6FA595; --teal-d:#4E8175; --pink:#D9A6BC; --cream:#EFE6D2; --ink:#22201d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:
+      radial-gradient(120% 90% at 50% 0%, #3a3f3c 0%, #22262a 55%, #14171a 100%);
+      font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;color:#eee9df;overflow:hidden}
+  #stage{position:fixed;inset:0}
+  canvas{display:block;touch-action:none}
+  .brand{position:absolute;top:26px;left:30px;z-index:5;pointer-events:none}
+  .brand h1{margin:0;font-size:15px;letter-spacing:.26em;text-transform:uppercase;font-weight:600;color:#f3eee3}
+  .brand p{margin:8px 0 0;font-size:12.5px;line-height:1.5;max-width:330px;color:#b9c2bd;letter-spacing:.02em}
+  .clips{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:6;display:flex;gap:10px;
+    padding:9px;border-radius:16px;background:rgba(20,24,26,.62);border:1px solid rgba(255,255,255,.09);
+    backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+  .clips button{appearance:none;border:0;cursor:pointer;font:inherit;font-size:13px;letter-spacing:.03em;
+    color:#dfe7e2;background:rgba(255,255,255,.07);padding:11px 18px;border-radius:11px;transition:.18s}
+  .clips button:hover{background:rgba(255,255,255,.15);color:#fff;transform:translateY(-1px)}
+  .clips button.active{background:linear-gradient(135deg,var(--teal),var(--pink));color:#141513;font-weight:650}
+  .clips button span{display:block;font-size:10px;opacity:.65;letter-spacing:.08em;margin-top:2px}
+  .hint{position:absolute;right:26px;bottom:30px;z-index:5;font-size:11.5px;color:#98a49f;line-height:1.6;text-align:right}
+  #loader{position:absolute;inset:0;display:grid;place-items:center;z-index:20;background:#14171a;transition:opacity .5s}
+  #loader div{font-size:13px;letter-spacing:.12em;color:#a9b6b0}
+  #loader i{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--teal);margin-right:9px;
+    animation:pulse 1s infinite ease-in-out}
+  @keyframes pulse{0%,100%{transform:scale(.7);opacity:.35}50%{transform:scale(1.2);opacity:1}}
+  #err{position:absolute;inset:0;display:none;place-items:center;z-index:30;padding:40px;text-align:center;
+    background:#14171a;color:#e7cfc8;font-size:13.5px;line-height:1.7}
+  @media (max-width:720px){
+    .brand p{display:none} .hint{display:none}
+    .clips{gap:6px;padding:7px} .clips button{padding:9px 11px;font-size:12px}
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div class="brand">
+  <h1>Фетровый Ктулху</h1>
+  <p>Процедурная 3D-модель тряпичной куклы по референсу: риг 40+ костей,
+     4 анимации, vertex-color фетр без текстур.</p>
+</div>
+
+<div class="clips">
+  <button data-clip="Idle" class="active">Idle<span>дыхание</span></button>
+  <button data-clip="Laugh">Laugh<span>смех</span></button>
+  <button data-clip="Cry">Cry<span>плач</span></button>
+  <button data-clip="Angry">Angry<span>гнев</span></button>
+</div>
+
+<div class="hint">мышь — вращение · колесо — зум<br />правая кнопка — сдвиг</div>
+
+<div id="loader"><div><i></i>загружаю модель…</div></div>
+<div id="err"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const stage = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x1d2224, 3.2, 7.5);
+
+const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, 0.005, 60);
+camera.position.set(0.19, 0.115, 0.40);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.085, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.minDistance = 0.09;
+controls.maxDistance = 0.85;
+controls.maxPolarAngle = Math.PI * 0.52;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.6;
+
+/* ---------- studio environment (procedural, no external HDR) ---------- */
+const pmrem = new THREE.PMREMGenerator(renderer);
+function envScene() {
+  const s = new THREE.Scene();
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: 'varying vec3 vP; void main(){ vP=position; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+    fragmentShader: `
+      varying vec3 vP;
+      void main(){
+        vec3 d = normalize(vP);
+        float up = clamp(d.y*0.5+0.5, 0.0, 1.0);
+        vec3 c = mix(vec3(0.10,0.11,0.12), vec3(0.72,0.76,0.78), pow(up,1.7));
+        float key = pow(clamp(dot(d, normalize(vec3(-0.55,0.72,0.42))),0.0,1.0), 5.0);
+        c += vec3(1.0,0.96,0.90)*key*0.85;
+        float rim = pow(clamp(dot(d, normalize(vec3(0.5,0.25,-0.7))),0.0,1.0), 3.0);
+        c += vec3(0.45,0.65,0.9)*rim*0.35;
+        gl_FragColor = vec4(c,1.0);
+      }`
+  });
+  s.add(new THREE.Mesh(new THREE.SphereGeometry(6, 32, 32), mat));
+  return s;
+}
+scene.environment = pmrem.fromScene(envScene(), 0.03).texture;
+
+const hemi = new THREE.HemisphereLight(0xdfeae6, 0x2a2f31, 0.5);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xfff1e2, 2.0);
+key.position.set(-0.45, 0.85, 0.5);
+key.castShadow = true;
+key.shadow.mapSize.set(1024, 1024);
+key.shadow.camera.near = 0.05; key.shadow.camera.far = 3;
+key.shadow.camera.left = -0.35; key.shadow.camera.right = 0.35;
+key.shadow.camera.top = 0.35; key.shadow.camera.bottom = -0.35;
+key.shadow.bias = -0.0009;
+scene.add(key);
+const fill = new THREE.DirectionalLight(0xbcd6ff, 0.45);
+fill.position.set(0.6, 0.3, 0.45);
+scene.add(fill);
+const rim = new THREE.DirectionalLight(0xdff0ff, 0.9);
+rim.position.set(0.2, 0.6, -0.8);
+scene.add(rim);
+
+/* soft contact shadow */
+const shadowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  const rad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+  rad.addColorStop(0, 'rgba(0,0,0,0.55)');
+  rad.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+  rad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rad; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
+const blob = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.34, 0.34),
+  new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })
+);
+blob.rotation.x = -Math.PI / 2;
+blob.position.y = 0.001;
+scene.add(blob);
+
+/* ---------- model + animation ---------- */
+const loaderEl = document.getElementById('loader');
+const errEl = document.getElementById('err');
+let mixer = null;
+const actions = {};
+let current = null;
+
+new GLTFLoader().load('./plush_cthulhu_animated.glb', (gltf) => {
+  const model = gltf.scene;
+  model.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.frustumCulled = false;
+      const m = o.material;
+      if (m) {
+        m.vertexColors = true;
+        m.roughness = o.name && /eye/i.test(o.name) ? 0.15 : 0.92;
+        m.metalness = 0.0;
+        m.envMapIntensity = 0.75;
+      }
+    }
+  });
+  scene.add(model);
+  mixer = new THREE.AnimationMixer(model);
+  gltf.animations.forEach((clip) => {
+    const a = mixer.clipAction(clip);
+    a.clampWhenFinished = false;
+    a.loop = THREE.LoopRepeat;
+    actions[clip.name] = a;
+  });
+  play('Idle');
+  loaderEl.style.opacity = 0;
+  setTimeout(() => loaderEl.remove(), 500);
+}, undefined, (e) => {
+  console.error(e);
+  loaderEl.remove();
+  errEl.style.display = 'grid';
+  errEl.innerHTML = 'Не удалось загрузить <b>plush_cthulhu_animated.glb</b>.<br>' +
+    'Положите HTML рядом с GLB и откройте через локальный сервер<br>' +
+    '(<code>python3 -m http.server</code>), либо смотрите превью в Arena.';
+});
+
+function play(name) {
+  if (!actions[name]) return;
+  const next = actions[name];
+  if (current === next) return;
+  next.reset();
+  next.enabled = true;
+  next.setEffectiveTimeScale(1);
+  next.setEffectiveWeight(1);
+  next.fadeIn(0.35).play();
+  if (current) current.fadeOut(0.35);
+  current = next;
+  document.querySelectorAll('.clips button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.clip === name);
+  });
+}
+
+document.querySelectorAll('.clips button').forEach((b) => {
+  b.addEventListener('click', () => play(b.dataset.clip));
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+function tick() {
+  const dt = clock.getDelta();
+  if (mixer) mixer.update(dt);
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+tick();
+</script>
+</body>
+</html>
