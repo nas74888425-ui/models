@@ -223,6 +223,28 @@ def paint_body(V):
                 dot = smoothstep(0.42, 0.22, np.abs((ph % 1.0) - 0.5))
                 col = mix(col, hex2rgb('#D8A2B8')[None, :], 0.75 * on * front * dot)
 
+    # ---------------- round pink suckers along the front of every tentacle
+    from plush.body import _TENT_RAW
+    sucker = np.zeros(len(P), np.float32)
+    for pts, rr in _TENT_RAW:
+        for side in (1, -1):
+            pl = np.array([[x * side, y, z] for (x, y, z) in pts], np.float32)
+            # walk the curve and drop a cup every 0.115 units
+            step = 0.115
+            for k in range(len(pl) - 1):
+                a, b = pl[k], pl[k + 1]
+                L = np.linalg.norm(b - a)
+                n_steps = max(1, int(L / step))
+                for m in range(n_steps + 1):
+                    t = m / n_steps
+                    c = a * (1 - t) + b * t
+                    # cups sit slightly to the front (-y) of the centre line
+                    c = c + np.array([0.0, -rr * 0.80, 0.0], np.float32)
+                    rad = rr * 0.31
+                    d = np.linalg.norm(P - c, axis=1)
+                    sucker = np.maximum(sucker, smoothstep(rad, rad * 0.55, d))
+    col = mix(col, hex2rgb('#DFA6BC')[None, :], 0.75 * sucker)
+
     # ---------------- nostril slits between the eyes
     for s_ in (1, -1):
         c = np.array([0.145 * s_, -1.24, 2.62], np.float32)

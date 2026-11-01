@@ -174,7 +174,7 @@ def body_sdf_raw(p):
     d = smin(d, head(p), 0.14)
     d = smin(d, ears(p), 0.10)
     d = smin(d, tentacles(p), 0.08)
-    d = np.minimum(d, nose(p))
+    d = smin(d, nose(p), 0.06)
     return d
 
 

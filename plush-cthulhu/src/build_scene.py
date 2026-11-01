@@ -145,7 +145,7 @@ def build():
     floor.name = 'Floor'
     m = bpy.data.materials.new('backdrop')
     m.use_nodes = True
-    m.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.62, 0.63, 0.62, 1)
+    m.node_tree.nodes['Principled BSDF'].inputs['Base Color'].default_value = (0.10, 0.10, 0.10, 1)
     m.node_tree.nodes['Principled BSDF'].inputs['Roughness'].default_value = 0.95
     floor.data.materials.append(m)
     setup_lighting()
@@ -153,13 +153,47 @@ def build():
     return rig, parts
 
 
+def add_fur(ob, count=40000, length=0.028, children=2):
+    """felt fibre: short hair strands over the surface (Cycles/EEVEE)"""
+    mod = ob.modifiers.new('Fur', 'PARTICLE_SYSTEM')
+    psys = mod.particle_system
+    psys.seed = 3
+    st = psys.settings
+    st.name = ob.name + '_fur'
+    st.type = 'HAIR'
+    st.use_advanced_hair = True
+    st.count = int(count)
+    st.hair_length = float(length)
+    st.emit_from = 'FACE'
+    st.use_emit_random = True
+    st.distribution = 'JIT'
+    st.normal_factor = 0.35          # lean the fibres along the surface normal
+    st.factor_random = 0.45
+    st.hair_step = 3
+    st.display_step = 2
+    st.root_radius = 1.0
+    st.tip_radius = 0.0
+    try:
+        st.child_type = 'INTERPOLATED'
+        st.child_percent = int(children)
+        st.rendered_child_count = int(children)
+        st.child_length = 1.0
+        st.child_length_threshold = 0.0
+        st.clump_factor = 0.1
+        st.roughness_endpoint = 0.0025
+        st.roughness_1 = 0.0025
+    except Exception as e:
+        print('fur children skipped:', e)
+    return psys
+
+
 def setup_lighting():
     sc = bpy.context.scene
     world = bpy.data.worlds.new('W')
     world.use_nodes = True
     bg = world.node_tree.nodes['Background']
-    bg.inputs['Color'].default_value = (0.32, 0.34, 0.36, 1)
-    bg.inputs['Strength'].default_value = 0.6
+    bg.inputs['Color'].default_value = (0.055, 0.055, 0.055, 1)
+    bg.inputs['Strength'].default_value = 0.55
     sc.world = world
 
     def area(name, loc, rot, size, energy, color=(1, 1, 1)):
@@ -173,9 +207,10 @@ def setup_lighting():
         bpy.context.collection.objects.link(o)
         return o
 
-    area('key', (-1.6, -2.6, 2.8), (math.radians(58), 0, math.radians(-32)), 2.2, 130, (1.0, 0.97, 0.93))
-    area('fill', (2.2, -1.8, 1.6), (math.radians(74), 0, math.radians(52)), 2.6, 55, (0.90, 0.95, 1.0))
-    area('rim', (0.8, 2.4, 2.6), (math.radians(-58), 0, math.radians(165)), 1.8, 110, (0.95, 0.97, 1.0))
+    area('key', (-2.0, -3.0, 3.4), (math.radians(52), 0, math.radians(-34)), 2.6, 210, (1.0, 0.96, 0.90))
+    area('fill', (2.6, -2.2, 1.9), (math.radians(72), 0, math.radians(50)), 3.0, 70, (0.90, 0.95, 1.0))
+    area('rim', (1.0, 2.8, 3.0), (math.radians(-55), 0, math.radians(160)), 2.0, 150, (0.96, 0.97, 1.0))
+    area('bounce', (0.0, -2.0, -1.2), (math.radians(180), 0, 0), 3.0, 25, (1.0, 0.95, 0.9))
 
 
 def add_camera():

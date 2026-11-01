@@ -6,7 +6,7 @@ def _principled(nt):
     return nt.nodes.get('Principled BSDF')
 
 
-def felt_material(name='felt', rough=0.96, sheen=0.42, bump=1.0, fibre=0.20):
+def felt_material(name='felt', rough=0.95, sheen=0.55, bump=1.25, fibre=0.34):
     mat = bpy.data.materials.get(name)
     if mat:
         return mat
@@ -19,13 +19,13 @@ def felt_material(name='felt', rough=0.96, sheen=0.42, bump=1.0, fibre=0.20):
     attr.location = (-820, 260)
     # fibre flecks: multiply the albedo by a fine noise around 1.0
     tex = nt.nodes.new('ShaderNodeTexNoise')
-    tex.inputs['Scale'].default_value = 420.0
-    tex.inputs['Detail'].default_value = 8.0
-    tex.inputs['Roughness'].default_value = 0.8
+    tex.inputs['Scale'].default_value = 260.0
+    tex.inputs['Detail'].default_value = 12.0
+    tex.inputs['Roughness'].default_value = 0.9
     tex.location = (-820, -60)
     ramp = nt.nodes.new('ShaderNodeValToRGB')
     ramp.color_ramp.elements[0].position = 0.30
-    ramp.color_ramp.elements[0].color = (0.72, 0.72, 0.72, 1)
+    ramp.color_ramp.elements[0].color = (0.62, 0.62, 0.62, 1)
     ramp.color_ramp.elements[1].position = 0.72
     ramp.color_ramp.elements[1].color = (1.0, 1.0, 1.0, 1)
     ramp.location = (-600, -60)
@@ -40,17 +40,17 @@ def felt_material(name='felt', rough=0.96, sheen=0.42, bump=1.0, fibre=0.20):
     nt.links.new(mix.outputs[2], bsdf.inputs['Base Color'])
     # felted surface: two-scale bump
     n2 = nt.nodes.new('ShaderNodeTexNoise')
-    n2.inputs['Scale'].default_value = 90.0
+    n2.inputs['Scale'].default_value = 130.0
     n2.inputs['Detail'].default_value = 14.0
     n2.inputs['Roughness'].default_value = 0.8
     n2.location = (-820, -400)
     bp = nt.nodes.new('ShaderNodeBump')
     bp.inputs['Strength'].default_value = bump
-    bp.inputs['Distance'].default_value = 0.006
+    bp.inputs['Distance'].default_value = 0.010
     bp.location = (-430, -400)
     nt.links.new(n2.outputs['Fac'], bp.inputs['Height'])
     n3 = nt.nodes.new('ShaderNodeTexNoise')
-    n3.inputs['Scale'].default_value = 620.0
+    n3.inputs['Scale'].default_value = 900.0
     n3.inputs['Detail'].default_value = 4.0
     n3.location = (-820, -650)
     bp2 = nt.nodes.new('ShaderNodeBump')
