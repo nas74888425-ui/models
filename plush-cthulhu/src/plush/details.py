@@ -1,132 +1,121 @@
-"""Separate parts: eyes, wings, diaper, navel."""
+"""Eyes, nappy and per-object colours."""
 import numpy as np
-from sdf_lib import smin, smax, ell, ell_rot, sphere
-import plush.paint as paint
+
 import plush.body as body
+import plush.paint as paint
+from sdf_lib import smin, smax, ell, sphere
+from plush.paint import smoothstep
 
-# ------------------------------------------------------------------------ eyes
-EYE_C = body.EYE_C.copy()
 EYE_R = body.EYE_R
-FWD = np.array([0.0, -1.0, 0.0])
 
 
-def eye_sdf(p, side=1.0):
-    c = EYE_C * np.array([side, 1, 1])
-    return sphere(p, c, EYE_R)
+def eye_center(side):
+    return body.EYE_C * np.array([side, 1, 1], np.float32)
+
+
+def eye_sdf(p, side):
+    return sphere(p, eye_center(side), EYE_R)
 
 
 def eye_colors(V, side):
-    """brown iris with dark rim, big black pupil, two catchlights, sclera with a soft shadow"""
-    c = EYE_C * np.array([side, 1, 1])
-    n = V - c
-    n /= np.linalg.norm(n, axis=1, keepdims=True)
-    g = FWD + np.array([0.16 * side, 0, -0.02])
-    g /= np.linalg.norm(g)
-    ang = np.degrees(np.arccos(np.clip(n @ g, -1, 1)))
-    N = len(V)
-    col = np.tile(paint.hex2rgb(paint.WHITE), (N, 1))
-    # sclera: slightly warm, darker toward the upper lid
-    up = smoothstep_h(n[:, 2])
-    col = paint.mix(col, '#D8D2C4', 0.5 * up)
-    # iris
-    t_iris = paint.smoothstep(61.0, 55.0, ang)
-    tt = paint.smoothstep(22.0, 52.0, ang)
-    iris = paint.mix(np.tile(paint.hex2rgb('#B07B33'), (N, 1)),
-                     np.tile(paint.hex2rgb('#5A3612'), (N, 1)), tt)
-    # radial fibres
-    fib = 0.5 + 0.5 * np.sin(np.arctan2(n[:, 0], n[:, 2]) * 60)
-    iris = paint.mix(iris, np.tile(paint.hex2rgb('#C08E45'), (N, 1)), 0.18 * fib)
-    col = paint.mix(col, iris, t_iris)
-    # dark rim of the iris
-    rim = paint.smoothstep(4.0, 0.0, np.abs(ang - 58.0))
-    col = paint.mix(col, '#3A2308', 0.8 * rim)
+    """big amber eye: huge pupil, thin amber iris ring, cream sclera, two highlights"""
+    c = eye_center(side)
+    rel = V - c
+    rel /= (np.linalg.norm(rel, axis=1, keepdims=True) + 1e-9)
+    gaze = np.array([-0.06 * side, -1.0, 0.05], np.float32)
+    gaze /= np.linalg.norm(gaze)
+    ang = np.degrees(np.arccos(np.clip(rel @ gaze, -1, 1)))
+
+    sclera = paint.hex2rgb(paint.EYE_WHITE)
+    iris = paint.hex2rgb(paint.IRIS)
+    iris_deep = paint.hex2rgb(paint.IRIS_DEEP)
+    pupil = paint.hex2rgb(paint.PUPIL)
+
+    col = np.tile(sclera, (len(V), 1))
+    # iris: amber, darker towards the edge
+    t_iris = paint.smoothstep(53.0, 46.0, ang)          # 1 inside the iris
+    amber = paint.mix(np.tile(iris_deep, (len(V), 1)), np.tile(iris, (len(V), 1)),
+                      paint.smoothstep(50.0, 34.0, ang))
+    col = paint.mix(col, amber, t_iris)
     # pupil
-    col = paint.mix(col, paint.BLACK, paint.smoothstep(33.0, 27.0, ang))
-    # catchlights: big upper-left, small lower-right
-    for (dirv, size, thr) in [((np.array([-0.30 * side, -0.55, 0.52])), 0.0, 0.982),
-                              ((np.array([0.24 * side, -0.55, -0.34])), 0.0, 0.994)]:
-        d = dirv / np.linalg.norm(dirv)
-        col = paint.mix(col, '#FFFFFF', paint.smoothstep(thr, thr + 0.012, n @ d))
-    return col
+    col = paint.mix(col, pupil, paint.smoothstep(34.0, 30.0, ang))
+    # tiny dark rim where the iris meets the sclera (as in the photos)
+    col = paint.mix(col, iris_deep, 0.55 * paint.smoothstep(54.0, 51.0, ang) * paint.smoothstep(47.0, 51.0, ang))
+
+    # highlights: one big soft, one small, both up and to the doll's left
+    for (dx, dz, rad, amp) in [(-0.33, 0.34, 0.30, 0.95), (0.16, 0.44, 0.14, 0.85)]:
+        h = np.array([dx * side, -0.42, dz], np.float32)
+        h /= np.linalg.norm(h)
+        a = np.arccos(np.clip(rel @ h, -1, 1))
+        col = paint.mix(col, np.ones(3, np.float32), amp * paint.smoothstep(rad, rad * 0.55, a))
+    return np.clip(col, 0, 1).astype(np.float32)
 
 
-def smoothstep_h(v):
-    return paint.smoothstep(0.0, 1.0, v)
-
-
-# ---------------------------------------------------------------------- wings
-D = None  # placeholder to keep linters calm
-
-
-def wing_colors(V):
-    """dusty pink membrane with sparse darker speckles, teal felt finger bones"""
-    from plush.wings import wing_sdf, WING_POLY
-    from sdf_lib import poly2d
-    pm = np.stack([np.abs(V[:, 0]), V[:, 1], V[:, 2]], -1)
-    x, z = pm[:, 0], pm[:, 2]
-    N = len(V)
-    # distance to the finger bones: bones are inside the tube radius
-    from plush.wings import TIPS, BASE, TIP_R, _yc
-    dmin = np.full(N, 1e9, np.float32)
-    for tip, r in zip(TIPS, TIP_R):
-        A = np.array([BASE[0], _yc(BASE[0]), BASE[1]], np.float32)
-        B = np.array([tip[0], _yc(tip[0]), tip[1]], np.float32)
-        ab = B - A
-        t = np.clip(((V - A) @ ab) / (ab @ ab), 0, 1)
-        d = np.linalg.norm(V - (A + t[:, None] * ab), axis=1) - r
-        dmin = np.minimum(dmin, d)
-    bone = paint.smoothstep(0.030, 0.008, dmin)
-    col = np.tile(paint.hex2rgb('#7FB2A2'), (N, 1))
-    membrane = paint.smoothstep(0.0, 0.02, dmin)
-    pink = np.tile(paint.hex2rgb('#C98FA8'), (N, 1))
-    edge = paint.smoothstep(-0.03, 0.12, poly2d(x, z, WING_POLY))
-    pink = paint.mix(pink, '#9C6880', 0.55 * edge)
-    rnd = paint.hash3(np.round(V * 30.0) / 30.0, 4.3)
-    pink = paint.mix(pink, '#7E5266', 0.75 * paint.smoothstep(0.90, 0.96, rnd))
-    col = paint.mix(col, pink, membrane)
-    return col
-
-
-# --------------------------------------------------------------------- diaper
-DIA_TOP = 1.10
-DIA_BOT = 0.04
-
-
-def diaper_sdf(p, thickness=0.24):
-    """cloth nappy: a shell offset from the hips, rolled waistband, rising sides"""
+# ------------------------------------------------------------------ nappy
+def diaper_sdf(p, thickness=0.055):
+    """small terry-cloth nappy: a shell around the hips only (kept off the legs)"""
     b = body.torso(p)
     z = p[:, 2]
-    pm = np.stack([np.abs(p[:, 0]), p[:, 1], p[:, 2]], -1)
-    band = np.clip(1.0 - np.abs(z - DIA_TOP) / 0.22, 0, 1)
-    t = thickness + 0.022 * band
-    d = np.maximum(-(b + t), b - t)
-    # top rim
-    d = np.maximum(d, z - DIA_TOP)
-    # bottom edge rises toward the sides so the thighs stay free
-    z_bot = 0.26 + 0.34 * np.clip((pm[:, 0] - 0.55) / 0.7, 0, 1) - 0.10 * np.clip(-(p[:, 1] + 0.6) / 1.0, 0, 1)
-    d = np.maximum(d, z_bot - z)
-    return d
+    shell = np.maximum(-(b + thickness), b - 0.02)
+    # widen the nappy across the hips (a soft padded mass rather than a glove)
+    pad = ell(p, (0.0, -0.26, 0.64), (0.80, 0.58, 0.40))
+    shell = smin(shell, pad, 0.14)
+    shell = np.maximum(shell, z - (body.DIA_TOP - 0.06))
+    # rounded leg holes: hollow out a fat cylinder around each thigh
+    q = p.copy()
+    q[:, 0] = np.abs(q[:, 0]) - 1.02
+    leg = np.sqrt(q[:, 0] ** 2 + (q[:, 1] + 0.02) ** 2) - 0.50
+    shell = np.maximum(shell, -leg)
+    shell = np.maximum(shell, np.abs(p[:, 0]) - 0.80)
+    z_bot = 0.16 + 0.26 * np.clip((np.abs(p[:, 0]) - 0.30) / 0.45, 0, 1)
+    shell = np.maximum(shell, z_bot - z)
+    # smooth folded waistband: gently thicker just below the top edge
+    shell = shell - 0.030 * smoothstep(0.09, 0.0, np.abs(z - (body.DIA_TOP - 0.075)))
+    return shell
 
 
 def diaper_colors(V):
-    N = len(V)
-    col = np.tile(paint.hex2rgb('#E4DCC6'), (N, 1))
-    n = paint.felt_noise(V, 8.0, 2.2)
-    col = paint.mix(col, '#D3C9AF', 0.35 * n)
-    # vertical cloth folds
-    fold = 0.5 + 0.5 * np.sin(np.arctan2(V[:, 0], -(V[:, 1] + 0.2)) * 16)
-    col = paint.mix(col, '#C9BFA4', 0.25 * fold)
-    # stitch line along the waistband
-    dash = 0.5 + 0.5 * np.sign(np.sin(np.arctan2(V[:, 0], -(V[:, 1] + 0.2)) * 40))
-    seam = paint.smoothstep(0.035, 0.012, np.abs(V[:, 2] - (DIA_TOP - 0.055)))
-    col = paint.mix(col, paint.STITCH, 0.75 * seam * dash)
-    return col
+    base = paint.hex2rgb(paint.NAPPY)
+    shade = paint.hex2rgb(paint.NAPPY_SHADE)
+    n = paint.value_noise(V, 22.0, 5.0)
+    n2 = paint.value_noise(V, 70.0, 2.0)
+    col = base[None, :] * (0.90 + 0.16 * n[:, None] + 0.08 * n2[:, None])
+    # darker towards the bottom and the creases
+    col = paint.mix(col, shade[None, :], 0.5 * paint.smoothstep(0.75, 0.25, V[:, 2]))
+    return np.clip(col, 0, 1).astype(np.float32)
 
 
-# ---------------------------------------------------------------------- navel
-def navel_sdf(p):
-    return sphere(p, (0.0, -0.90, 1.18), 0.085)
-
-
+# ------------------------------------------------------------------ navel
 def navel_colors(V):
-    return np.tile(paint.hex2rgb('#4F8377'), (len(V), 1))
+    base = paint.hex2rgb(paint.TEAL)
+    dark = paint.hex2rgb(paint.TEAL_DARK)
+    d = np.linalg.norm(V - body.NAVEL_C, axis=1)
+    col = base[None, :] * (0.9 + 0.2 * paint.value_noise(V, 20.0, 1.0))[:, None]
+    col = paint.mix(col, dark[None, :], paint.smoothstep(0.09, 0.0, d))
+    return np.clip(col, 0, 1).astype(np.float32)
+
+
+# ------------------------------------------------------------------ wings
+def wing_colors(V):
+    membrane = paint.hex2rgb(paint.WING_MEMBRANE)
+    edge = paint.hex2rgb(paint.WING_EDGE)
+    speck = paint.hex2rgb(paint.WING_SPECK)
+    bone = paint.hex2rgb(paint.WING_BONE)
+    n = paint.value_noise(V, 9.0, 3.3)
+    col = membrane[None, :] * (0.86 + 0.28 * n[:, None])
+    # dark speckles
+    s = paint.value_noise(V, 46.0, 11.0)
+    col = paint.mix(col, speck[None, :], 0.85 * paint.smoothstep(0.72, 0.86, s))
+    # darker scalloped edge (near the outline)
+    dist_edge = np.abs(np.linalg.norm(V[:, [0, 2]] - np.array([1.24, 1.86], np.float32), axis=1) - 0.62)
+    col = paint.mix(col, edge[None, :], 0.5 * paint.smoothstep(0.16, 0.02, dist_edge))
+    # felt bones along the fingers
+    from plush.wings import ROOT, TIPS
+    a = np.array(ROOT, np.float32)
+    for tx, tz in TIPS:
+        b = np.array([tx, tz], np.float32)
+        ab = b - a
+        t = np.clip(((V[:, [0, 2]] - a) @ ab) / (ab @ ab), 0, 1)
+        dist = np.linalg.norm(V[:, [0, 2]] - (a + t[:, None] * ab), axis=1)
+        col = paint.mix(col, bone[None, :], 0.9 * paint.smoothstep(0.035, 0.012, dist))
+    return np.clip(col, 0, 1).astype(np.float32)

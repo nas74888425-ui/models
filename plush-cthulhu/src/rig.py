@@ -9,58 +9,53 @@ Bones (model space, Z up, character faces -Y):
 """
 import numpy as np
 import bpy
+from plush.body import _TENT_RAW
 from mathutils import Vector, Matrix
 
 # (name, head, tail, parent, deform, connected)
 BONES = [
-    ('root',        (0, 0, 0.0),      (0, 0, 0.45),    None,       False, False),
-    ('hips',        (0, 0, 0.55),     (0, 0, 1.05),    'root',     True,  False),
-    ('spine',       (0, 0, 1.05),     (0, 0, 1.45),    'hips',     True,  True),
-    ('chest',       (0, 0, 1.45),     (0, 0, 1.95),    'spine',    True,  True),
-    ('neck',        (0, 0, 1.95),     (0, 0, 2.18),    'chest',    True,  True),
-    ('head',        (0, 0, 2.18),     (0, 0, 3.30),    'neck',     True,  True),
-    ('jaw',         (0, -0.35, 2.35), (0, -1.05, 2.25), 'head',    True,  False),
-    # ears
-    ('earL',        (1.05, 0.14, 2.98), (1.92, 0.26, 3.34), 'head', True, False),
-    ('earR',        (-1.05, 0.14, 2.98), (-1.92, 0.26, 3.34), 'head', True, False),
-    # wings
-    ('wingL',       (0.44, 0.44, 2.26), (1.30, 0.60, 2.20), 'chest', True, False),
-    ('wingR',       (-0.44, 0.44, 2.26), (-1.30, 0.60, 2.20), 'chest', True, False),
-    # arms
-    ('upperarmL',   (0.88, -0.16, 1.68), (1.34, -0.60, 1.32), 'chest', True, False),
-    ('forearmL',    (1.34, -0.60, 1.32), (1.36, -1.00, 1.00), 'upperarmL', True, True),
-    ('handL',       (1.36, -1.00, 1.00), (1.38, -1.30, 0.78), 'forearmL', True, True),
-    ('upperarmR',   (-0.88, -0.16, 1.68), (-1.34, -0.60, 1.32), 'chest', True, False),
-    ('forearmR',    (-1.34, -0.60, 1.32), (-1.36, -1.00, 1.00), 'upperarmR', True, True),
-    ('handR',       (-1.36, -1.00, 1.00), (-1.38, -1.30, 0.78), 'forearmR', True, True),
-    # eyes (scaled to squint) and lids
-    ('eyeL',        (0.58, -1.00, 2.60), (0.58, -1.30, 2.60), 'head', True, False),
-    ('eyeR',        (-0.58, -1.00, 2.60), (-0.58, -1.30, 2.60), 'head', True, False),
-    ('lidL',        (0.58, -1.00, 2.60), (0.58, -1.35, 2.60), 'head', True, False),
-    ('lidR',        (-0.58, -1.00, 2.60), (-0.58, -1.35, 2.60), 'head', True, False),
-    # legs
-    ('thighL',      (0.60, -0.20, 0.78), (1.10, -1.45, 0.56), 'hips', True, False),
-    ('shinL',       (1.10, -1.45, 0.56), (1.12, -1.72, 0.56), 'thighL', True, True),
-    ('footL',       (1.12, -1.72, 0.56), (1.12, -2.10, 0.52), 'shinL', True, True),
-    ('thighR',      (-0.60, -0.20, 0.78), (-1.10, -1.45, 0.56), 'hips', True, False),
-    ('shinR',       (-1.10, -1.45, 0.56), (-1.12, -1.72, 0.56), 'thighR', True, True),
-    ('footR',       (-1.12, -1.72, 0.56), (-1.12, -2.10, 0.52), 'shinR', True, True),
+    ('root',        (0, 0, 0.0),       (0, 0, 0.40),    None,       False, False),
+    ('hips',        (0, 0, 0.55),      (0, 0, 1.00),    'root',     True,  False),
+    ('spine',       (0, 0, 1.00),      (0, 0, 1.45),    'hips',     True,  True),
+    ('chest',       (0, 0, 1.45),      (0, 0, 1.85),    'spine',    True,  True),
+    ('neck',        (0, 0, 1.85),      (0, 0, 2.10),    'chest',    True,  True),
+    ('head',        (0, 0, 2.10),      (0, 0, 3.30),    'neck',     True,  True),
+    ('jaw',         (0, -0.70, 2.30),  (0, -1.15, 2.15), 'head',    True,  False),
+    # ears (thin plates growing out of the head)
+    ('earL',        (0.95, 0.16, 2.70), (1.55, 0.22, 3.40), 'head',  True,  False),
+    ('earR',        (-0.95, 0.16, 2.70), (-1.55, 0.22, 3.40), 'head', True,  False),
+    # wings (behind the shoulders)
+    ('wingL',       (0.55, 0.36, 2.20), (1.65, 0.42, 1.75), 'chest', True,  False),
+    ('wingR',       (-0.55, 0.36, 2.20), (-1.65, 0.42, 1.75), 'chest', True, False),
+    # arms: shoulder -> elbow -> wrist -> fist resting in front of the thigh
+    ('upperarmL',   (0.50, -0.02, 1.90), (0.98, -0.60, 1.52), 'chest', True, False),
+    ('forearmL',    (0.98, -0.60, 1.52), (1.02, -0.88, 1.22), 'upperarmL', True, True),
+    ('handL',       (1.02, -0.88, 1.22), (1.02, -1.12, 1.10), 'forearmL', True, True),
+    ('upperarmR',   (-0.50, -0.02, 1.90), (-0.98, -0.60, 1.52), 'chest', True, False),
+    ('forearmR',    (-0.98, -0.60, 1.52), (-1.02, -0.88, 1.22), 'upperarmR', True, True),
+    ('handR',       (-1.02, -0.88, 1.22), (-1.02, -1.12, 1.10), 'forearmR', True, True),
+    # eyes and eyelids
+    ('eyeL',        (0.475, -1.00, 3.12), (0.475, -1.30, 3.12), 'head', True, False),
+    ('eyeR',        (-0.475, -1.00, 3.12), (-0.475, -1.30, 3.12), 'head', True, False),
+    ('lidL',        (0.475, -1.00, 3.12), (0.475, -1.35, 3.12), 'head', True, False),
+    ('lidR',        (-0.475, -1.00, 3.12), (-0.475, -1.35, 3.12), 'head', True, False),
+    # legs: thigh -> short shin -> foot, soles facing the camera
+    ('thighL',      (0.44, 0.00, 0.62), (1.06, -0.20, 0.52), 'hips', True, False),
+    ('shinL',       (1.06, -0.20, 0.52), (1.10, -0.50, 0.44), 'thighL', True, True),
+    ('footL',       (1.10, -0.50, 0.44), (1.10, -0.90, 0.40), 'shinL', True, True),
+    ('thighR',      (-0.44, 0.00, 0.62), (-1.06, -0.20, 0.52), 'hips', True, False),
+    ('shinR',       (-1.06, -0.20, 0.52), (-1.10, -0.50, 0.44), 'thighR', True, True),
+    ('footR',       (-1.10, -0.50, 0.44), (-1.10, -0.90, 0.40), 'shinR', True, True),
 ]
 
-# tentacle bones follow the SDF centre-lines
+# tentacle bones follow the SDF centre-lines of the 8 tentacles
 TENT_BONES = []
-_TENT = [
-    [(0.22, -1.34, 2.14), (0.25, -1.50, 1.90), (0.30, -1.58, 1.68), (0.44, -1.58, 1.56), (0.58, -1.50, 1.58)],
-    [(0.58, -1.28, 2.14), (0.64, -1.46, 1.88), (0.70, -1.54, 1.66), (0.84, -1.52, 1.54), (0.97, -1.44, 1.58)],
-    [(0.94, -1.08, 2.10), (1.04, -1.28, 1.86), (1.10, -1.34, 1.66), (1.22, -1.31, 1.58), (1.32, -1.20, 1.65)],
-    [(1.16, -0.86, 2.08), (1.30, -1.02, 1.88), (1.40, -1.06, 1.72), (1.50, -0.98, 1.72)],
-]
-for i, line in enumerate(_TENT):
+for _i, (_pts, _r) in enumerate(_TENT_RAW, start=1):
     for side, tag in ((1, 'L'), (-1, 'R')):
-        pts = [(p[0] * side, p[1], p[2]) for p in line]
+        pts = [(float(x) * side, float(y), float(z)) for (x, y, z) in _pts]
         for j in range(len(pts) - 1):
-            name = 'tent%d%s_%d' % (i + 1, tag, j + 1)
-            parent = 'head' if j == 0 else 'tent%d%s_%d' % (i + 1, tag, j)
+            name = 'tent%d%s_%d' % (_i, tag, j + 1)
+            parent = 'head' if j == 0 else 'tent%d%s_%d' % (_i, tag, j)
             TENT_BONES.append((name, pts[j], pts[j + 1], parent, True, j > 0))
 BONES = BONES + TENT_BONES
 

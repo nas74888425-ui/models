@@ -1,23 +1,24 @@
-"""Vertex-colour painting of the felt doll: flat felt colours + embroidered patterns.
-
-Everything is analytic (no textures, no UVs) so it survives export to glTF as COLOR_0
-and can be animated/deformed freely.
-"""
+"""Vertex-colour painting: felt, applique spots, stitched stars, pads, stitches."""
 import numpy as np
 
-# ------------------------------------------------------------------ palette (sRGB)
-TEAL = '#6FA595'
-TEAL_DARK = '#4E8175'
-TEAL_LIGHT = '#86BCA9'
-PINK = '#D9A6BC'
-PINK_DEEP = '#C58AA6'
-CREAM = '#E9E1CD'
-CREAM_STAR = '#EBD394'
-STITCH = '#C98B45'
-BROWN_IRIS = '#8A5B22'
-IRIS_RIM = '#4A2C0B'
-BLACK = '#120C06'
-WHITE = '#F2EFE7'
+# ------------------------------------------------------------------ palette
+TEAL = '#5E8F79'
+TEAL_DARK = '#3F6B58'
+TEAL_LIGHT = '#7FAE97'
+PINK = '#D9A0B8'
+PINK_DEEP = '#C4869F'
+CREAM_STAR = '#E2B95F'
+STITCH = '#C08A3E'
+NAPPY = '#E9E3D4'
+NAPPY_SHADE = '#CFC7B6'
+EYE_WHITE = '#F3EEE4'
+IRIS = '#A5762F'
+IRIS_DEEP = '#6A4318'
+PUPIL = '#0E0B08'
+WING_MEMBRANE = '#C990A8'
+WING_EDGE = '#A86F88'
+WING_SPECK = '#7E5266'
+WING_BONE = '#7FB2A2'
 
 
 def hex2rgb(h):
@@ -26,14 +27,9 @@ def hex2rgb(h):
 
 
 def mix(a, b, t):
-    """a,b: (N,3) or hex str; t: (N,)"""
-    a = np.asarray(a if not isinstance(a, str) else np.tile(hex2rgb(a), (len(t), 1)), np.float32)
-    b = np.asarray(b if not isinstance(b, str) else np.tile(hex2rgb(b), (len(t), 1)), np.float32)
-    if a.ndim == 1:
-        a = np.tile(a, (len(t), 1))
-    if b.ndim == 1:
-        b = np.tile(b, (len(t), 1))
-    t = np.clip(t, 0, 1)[:, None]
+    t = np.asarray(t, np.float32)
+    if t.ndim == 1:
+        t = t[:, None]
     return a * (1 - t) + b * t
 
 
@@ -42,183 +38,258 @@ def smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
-def hash3(p, seed=0.0):
-    """deterministic pseudo-random in [0,1) per point"""
-    x = np.sin(p[:, 0] * 127.1 + p[:, 1] * 311.7 + p[:, 2] * 74.7 + seed) * 43758.5453
-    return x - np.floor(x)
+def hash3(x, y, z, seed=0.0):
+    v = np.sin(x * 127.1 + y * 311.7 + z * 74.7 + seed * 13.3) * 43758.5453
+    return v - np.floor(v)
 
 
-def felt_noise(p, scale=6.0, seed=0.0):
-    """soft fibrous variation of the felt tone"""
-    x, y, z = p[:, 0] * scale, p[:, 1] * scale, p[:, 2] * scale
-    n = (np.sin(x * 1.7 + seed) * np.cos(y * 2.3 - seed * 0.3) * np.sin(z * 1.9 + 0.7)
-         + 0.55 * np.sin(x * 3.9 - 0.4) * np.cos(z * 3.1 + seed * 0.5)
-         + 0.3 * np.sin(y * 7.3 + 1.3) * np.cos(x * 6.7))
-    return np.clip(0.5 + 0.4 * n, 0, 1)
+def value_noise(P, freq, seed=0.0):
+    """cheap smooth 3D value noise, P is (N,3)"""
+    q = P * freq
+    i = np.floor(q)
+    f = q - i
+    f = f * f * (3 - 2 * f)
+    acc = np.zeros(len(P), np.float32)
+    for dx in (0, 1):
+        for dy in (0, 1):
+            for dz in (0, 1):
+                w = ((f[:, 0] if dx else 1 - f[:, 0]) *
+                     (f[:, 1] if dy else 1 - f[:, 1]) *
+                     (f[:, 2] if dz else 1 - f[:, 2]))
+                acc += w * hash3(i[:, 0] + dx, i[:, 1] + dy, i[:, 2] + dz, seed)
+    return acc
 
 
-# ------------------------------------------------------------------ star helper
-def star_field(u, v, cell=0.62, r_out=0.19, r_in=0.082, density=0.36):
-    """crisp 5-point stars scattered on a 2D parameter plane; returns coverage in [0,1]"""
-    from sdf_lib import star2d
-    out = np.zeros(u.shape, np.float32)
-    iu = np.floor(u / cell)
-    iv = np.floor(v / cell)
-    for du in (-1, 0, 1):
-        for dv in (-1, 0, 1):
-            ci = iu + du
-            cv = iv + dv
-            h1 = np.sin(ci * 12.9898 + cv * 78.233) * 43758.5453
-            h1 = h1 - np.floor(h1)
-            h2 = np.sin(ci * 39.3467 + cv * 11.1351) * 43758.5453
-            h2 = h2 - np.floor(h2)
-            h3 = np.sin(ci * 21.7893 + cv * 63.7264) * 43758.5453
-            h3 = h3 - np.floor(h3)
-            keep = h3 > density
-            if not np.any(keep):
+def felt_noise(P, seed=0.0):
+    n = (value_noise(P, 6.0, seed) * 0.55 + value_noise(P, 17.0, seed + 3.1) * 0.30 +
+         value_noise(P, 43.0, seed + 7.7) * 0.15)
+    return n
+
+
+_STAR_PTS = None
+
+
+def _star_poly(r_in_ratio=0.44):
+    global _STAR_PTS
+    if _STAR_PTS is None:
+        pts = []
+        for k in range(10):
+            a = np.pi / 2 + k * np.pi / 5
+            r = 1.0 if k % 2 == 0 else r_in_ratio
+            pts.append((float(np.cos(a) * r), float(np.sin(a) * r)))
+        _STAR_PTS = pts
+    return _STAR_PTS
+
+
+def star_field(u, v, cell=0.3, r_out=0.1, r_in=0.044, density=0.5, seed=0.0):
+    """clean 5-point felt stars on a jittered grid in (u, v) space"""
+    from sdf_lib import poly2d
+    poly = _star_poly(r_in / r_out)
+    out = np.zeros(len(u), np.float32)
+    cu = np.floor(u / cell)
+    cv = np.floor(v / cell)
+    for du_ in (-1, 0, 1):
+        for dv_ in (-1, 0, 1):
+            cx_i = cu + du_
+            cy_i = cv + dv_
+            h1 = hash3(cx_i, cy_i, 0.0, seed)
+            keep = (h1 < density).astype(np.float32)
+            cx = (cx_i + 0.2 + 0.6 * hash3(cx_i, cy_i, 1.0, seed)) * cell
+            cy = (cy_i + 0.2 + 0.6 * hash3(cx_i, cy_i, 2.0, seed)) * cell
+            rot = hash3(cx_i, cy_i, 3.0, seed) * 2 * np.pi
+            dx = (u - cx) / r_out
+            dy = (v - cy) / r_out
+            near = (np.abs(dx) < 1.5) & (np.abs(dy) < 1.5) & (keep > 0)
+            if not near.any():
                 continue
-            cu = (ci + 0.5 + (h1 - 0.5) * 0.55) * cell
-            cvv = (cv + 0.5 + (h2 - 0.5) * 0.55) * cell
-            d = star2d(u - cu, v - cvv, r_out * (0.8 + 0.45 * h1), r_in * (0.8 + 0.45 * h2),
-                       rot=h1 * 6.283)
-            out = np.maximum(out, smoothstep(0.012, -0.012, d) * keep)
-    return np.clip(out, 0, 1)
+            cr, sr = np.cos(-rot[near]), np.sin(-rot[near])
+            xr = dx[near] * cr - dy[near] * sr
+            yr = dx[near] * sr + dy[near] * cr
+            d = poly2d(xr, yr, poly)
+            out[near] = np.maximum(out[near], smoothstep(0.02, -0.07, d))
+    return out
 
 
-# ------------------------------------------------------------------ paint: body
-def paint_body(V, F=None):
-    """returns (N,3) colours for the body/limb mesh in model space"""
-    N = len(V)
-    pm = np.stack([np.abs(V[:, 0]), V[:, 1], V[:, 2]], -1)
-    x, y, z = pm[:, 0], pm[:, 1], pm[:, 2]
+# ------------------------------------------------------------------ props
+def _limb_coords(V, A, B):
+    """cylindrical unwrap of a limb: returns (t along axis, angle, radius)"""
+    A = np.asarray(A, np.float32)
+    B = np.asarray(B, np.float32)
+    ab = B - A
+    L = np.linalg.norm(ab)
+    ab = ab / L
+    ref = np.array([0.0, 0.0, 1.0], np.float32)
+    if abs(ab @ ref) > 0.9:
+        ref = np.array([0.0, 1.0, 0.0], np.float32)
+    u1 = np.cross(ab, ref)
+    u1 /= np.linalg.norm(u1)
+    u2 = np.cross(ab, u1)
+    rel = V - A
+    t = rel @ ab / L
+    perp = rel - (t[:, None] * L) * ab
+    ang = np.arctan2(perp @ u2, perp @ u1)
+    rad = np.linalg.norm(perp, axis=1)
+    return t, ang, rad
 
-    base = np.tile(hex2rgb(TEAL), (N, 1))
-    # fibrous felt tone variation
-    n = felt_noise(V, 5.0, 0.7)
-    base = mix(base, TEAL_LIGHT, 0.35 * (n - 0.5) + 0.18)
-    base = mix(base, TEAL_DARK, 0.40 * smoothstep(0.55, 0.95, 1 - n))
-    # airbrushed pink mottling on the felt (cheeks, shoulders, knees)
-    mot = felt_noise(V, 3.4, 3.3)
-    soft_pink = smoothstep(0.66, 0.84, mot)
-    col0 = mix(base, PINK, 0.16 * soft_pink)
 
-    col = col0
+def _mask(t, ang, rad, t0, t1, r_far, front=True):
+    m = smoothstep(t0 - 0.04, t0 + 0.06, t) * smoothstep(t1 + 0.06, t1 - 0.04, t)
+    m = m * smoothstep(r_far + 0.14, r_far - 0.02, rad)
+    return m
 
-    # ---- pink felt spots on the head: explicit patches (like the reference)
-    SPOTS = [
-        (0.00, -0.55, 3.62, 0.30), (0.42, -0.30, 3.66, 0.19), (-0.40, -0.34, 3.62, 0.17),
-        (0.20, -0.72, 3.30, 0.21), (-0.24, -0.66, 3.36, 0.19), (0.72, -0.34, 3.34, 0.16),
-        (-0.70, -0.36, 3.30, 0.15), (0.94, 0.02, 3.10, 0.13), (-0.94, 0.02, 3.12, 0.13),
-        (0.52, 0.30, 3.56, 0.15), (-0.52, 0.32, 3.54, 0.14), (0.00, 0.42, 3.50, 0.17),
-        (0.30, -0.86, 2.98, 0.15), (-0.32, -0.88, 2.96, 0.14), (1.02, -0.30, 2.86, 0.11),
-        (-1.04, -0.28, 2.84, 0.11), (0.34, 0.34, 3.10, 0.12), (-0.36, 0.36, 3.08, 0.12),
-    ]
-    for (sx, sy, sz, sr) in SPOTS:
-        dd = np.sqrt((V[:, 0] - sx) ** 2 + (V[:, 1] - sy) ** 2 + (V[:, 2] - sz) ** 2)
-        edge = 0.02 + 0.06 * hash3(V, abs(sx) * 7.0)
-        col = mix(col, PINK, 0.96 * smoothstep(sr, sr - 0.018, dd))
-    # ---- softer random mottling on the cranium
-    head_mask = smoothstep(2.60, 2.72, z) * smoothstep(1.36, 1.10, np.abs(V[:, 0]))
-    rnd = hash3(np.round(V * 22.0) / 22.0, 3.1)
-    spot = smoothstep(0.985, 0.995, rnd)
-    # regular pattern of round patches instead of pure noise: use a 3D wobble field
-    wob = (np.sin(V[:, 0] * 9.0) * np.sin(V[:, 1] * 8.0 + 1.0) * np.sin(V[:, 2] * 7.5))
-    spots = smoothstep(0.62, 0.80, wob) * head_mask
-    col = mix(col, PINK, 0.55 * spots)
 
-    # ---- big pink patch on the crown
-    crown = smoothstep(3.55, 3.42, z) * smoothstep(0.55, 0.35, np.sqrt(V[:, 0] ** 2 + (V[:, 1] + 0.1) ** 2))
-    col = mix(col, PINK_DEEP, 0.9 * crown)
+def paint_body(V):
+    P = V
+    base = hex2rgb(TEAL)
+    dark = hex2rgb(TEAL_DARK)
+    light = hex2rgb(TEAL_LIGHT)
+    pink = hex2rgb(PINK)
+    cream = hex2rgb(CREAM_STAR)
+    stitch = hex2rgb(STITCH)
 
-    # ---- cheek blush
-    for s in (1, -1):
-        d = np.sqrt((V[:, 0] - 0.88 * s) ** 2 + (V[:, 1] + 0.92) ** 2 + (V[:, 2] - 2.28) ** 2)
-        col = mix(col, PINK, 0.55 * smoothstep(0.55, 0.18, d))
+    n = felt_noise(P)
+    col = base[None, :] * (0.90 + 0.20 * n[:, None])
+    # fine fibre speckle so the felt does not read as smooth plastic
+    fib = value_noise(P, 120.0, 17.0)
+    col = col * (0.94 + 0.12 * fib[:, None])
+    # soft shading: slightly darker in the crevices (lower/behind)
+    col = mix(col, dark[None, :], 0.26 * smoothstep(2.4, 0.2, P[:, 2]))
 
-    # ---- inner ear: pink on the front/inner face of the ear
-    ear_zone = smoothstep(1.05, 1.25, x) * smoothstep(2.55, 2.75, z) * smoothstep(0.05, -0.15, y)
-    col = mix(col, PINK, 0.9 * ear_zone)
-
-    # ---- cream stars embroidered on arms and legs (cylindrical unwrap around each limb)
-    def limb_stars(A, B, r_mean, cell, r_out, r_in, t0=0.12, t1=0.95, seed=0.0):
-        A = np.array(A, np.float32); B = np.array(B, np.float32)
-        ab = B - A
-        L = np.linalg.norm(ab)
-        ab = ab / L
-        tmp = np.array([0.0, 0.0, 1.0], np.float32)
-        if abs(ab @ tmp) > 0.9:
-            tmp = np.array([0.0, 1.0, 0.0], np.float32)
-        u1 = np.cross(ab, tmp); u1 /= np.linalg.norm(u1)
-        u2 = np.cross(ab, u1)
-        rel = V - A
-        t = rel @ ab / L
-        perp = rel - (t[:, None] * L) * ab
-        ang = np.arctan2(perp @ u2, perp @ u1)
-        # coverage mask: only near this limb
-        rad = np.linalg.norm(perp, axis=1)
-        on = smoothstep(r_mean + 0.16, r_mean + 0.02, rad) * smoothstep(t0 - 0.05, t0 + 0.08, t) * smoothstep(t1 + 0.08, t1 - 0.05, t)
-        return star_field(ang * r_mean + seed, t * L, cell=cell, r_out=r_out, r_in=r_in, density=0.5) * on
-
+    # ---------------- felt applique spots on the head (regular, like the reference)
+    head_c = np.array([0.0, 0.10, 3.02], np.float32)
+    rel = P - head_c
+    # spherical directions
+    r = np.linalg.norm(rel, axis=1) + 1e-6
+    d = rel / r[:, None]
+    # spots laid out on a fibonacci sphere so they are evenly spread
+    N = 34
+    idx = np.arange(N)
+    phi = np.arccos(1 - 2 * (idx + 0.5) / N)
+    theta = np.pi * (1 + 5 ** 0.5) * idx
+    dirs = np.stack([np.cos(theta) * np.sin(phi), np.sin(theta) * np.sin(phi), np.cos(phi)], 1)
+    size = 0.075 + 0.062 * hash3(idx.astype(np.float64), 3.1, 7.7)
+    spot = np.zeros(len(P), np.float32)
+    for k in range(N):
+        if hash3(idx[k], 1.0, 2.0) < 0.10:
+            continue
+        ang = np.arccos(np.clip(d @ dirs[k], -1, 1))
+        rad = r * np.sin(ang)
+        s = size[k]
+        spot = np.maximum(spot, smoothstep(s, s * 0.86, rad) *
+                          smoothstep(s * 1.02, s * 0.9, rad) * 0 + smoothstep(s, s * 0.88, rad))
+    # only on the head (not on limbs / body)
+    head_m = smoothstep(2.30, 2.55, P[:, 2]) * smoothstep(1.35, 1.10, np.abs(P[:, 0])) * smoothstep(-1.30, -1.15, P[:, 1])
+    # keep the spots off the eyes and the muzzle
     for s_ in (1, -1):
-        cov = limb_stars((0.60 * s_, -0.20, 0.78), (1.12 * s_, -1.92, 0.52), 0.46,
-                         cell=0.34, r_out=0.10, r_in=0.043, t0=0.16, t1=0.90, seed=0.0 if s_ > 0 else 1.1)
-        col = mix(col, CREAM_STAR, 1.0 * cov)
-        cov2 = limb_stars((0.88 * s_, -0.16, 1.68), (1.38 * s_, -1.18, 0.82), 0.33,
-                          cell=0.30, r_out=0.082, r_in=0.034, t0=0.22, t1=0.92, seed=2.3 if s_ > 0 else 3.7)
-        col = mix(col, CREAM_STAR, 0.98 * cov2)
+        de = np.linalg.norm(P - (np.array([0.475 * s_, -1.00, 3.12], np.float32)), axis=1)
+        spot = spot * smoothstep(0.40, 0.52, de)
+    spot = spot * head_m
+    col = mix(col, pink[None, :], 0.92 * spot)
+    # pink felted tuft on the very top
+    tuft = smoothstep(3.86, 3.96, P[:, 2]) * smoothstep(0.50, 0.28, np.sqrt(P[:, 0] ** 2 + (P[:, 1] - 0.05) ** 2))
+    col = mix(col, pink[None, :], 0.95 * tuft)
 
-    # ---- paw pads: big pink heel pad + 4 toe pads on the foot fronts
-    for s in (1, -1):
-        X = V[:, 0] * s
-        front = smoothstep(-1.95, -2.10, V[:, 1])
-        # main pad
-        dpad = np.sqrt(((X - 1.10) / 1.0) ** 2 + ((V[:, 2] - 0.40) / 0.8) ** 2)
-        pad = smoothstep(0.42, 0.33, dpad) * front
-        col = mix(col, PINK, 0.95 * pad)
-        for (tx, tz, tr) in [(0.80, 0.66, 0.155), (1.02, 0.74, 0.165), (1.24, 0.72, 0.16), (1.44, 0.60, 0.14)]:
-            dt = np.sqrt((X - tx) ** 2 + ((V[:, 2] - tz) / 1.0) ** 2)
-            col = mix(col, PINK_DEEP, 0.9 * smoothstep(tr * 1.25, tr * 0.8, dt) * front)
-        # small finger pads on the paw
-        dhand = np.sqrt(((X - 1.32) / 1.0) ** 2 + ((V[:, 2] - 0.72) / 0.9) ** 2 + ((V[:, 1] + 1.2) / 1.4) ** 2)
-        col = mix(col, PINK, 0.75 * smoothstep(0.30, 0.20, dhand))
-
-    # ---- embroidered eyebrows: small thin stitches just above each eye
+    # ---------------- cheek blush (soft pink shading, as in the felt photo)
     for s_ in (1, -1):
-        ex, ez = 0.52 * s_, 3.02
-        dx = (V[:, 0] - ex) / 0.26
-        dz = (V[:, 2] - ez) / 0.10
-        rr = np.sqrt(dx ** 2 + dz ** 2)
-        band = smoothstep(0.30, 0.14, np.abs(rr - 0.85))
-        front = smoothstep(-0.55, -0.80, V[:, 1])
-        col = mix(col, '#5E4126', 0.8 * band * front)
+        cc = np.array([0.74 * s_, -0.92, 2.74], np.float32)
+        dd = np.linalg.norm((P - cc) * np.array([1.0, 0.75, 1.0], np.float32), axis=1)
+        col = mix(col, pink[None, :], 0.34 * smoothstep(0.40, 0.05, dd))
 
-    # ---- pink felt tips on the tentacles (last ~25% of every strand)
-    from plush.body import TENTACLES
-    for line, radii in TENTACLES:
-        for s_ in (1, -1):
-            pts = np.array([[p[0] * s_, p[1], p[2]] for p in line], np.float32)
-            seg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
-            cum = np.concatenate([[0], np.cumsum(seg)])
-            L = cum[-1]
-            dmin = np.full(N, 1e9, np.float32)
-            tbest = np.zeros(N, np.float32)
-            for i in range(len(pts) - 1):
-                a, b = pts[i], pts[i + 1]
-                ab = b - a
-                t = np.clip(((V - a) @ ab) / (ab @ ab), 0, 1)
-                d = np.linalg.norm(V - (a + t[:, None] * ab), axis=1)
-                closer = d < dmin
-                dmin = np.where(closer, d, dmin)
-                tbest = np.where(closer, (cum[i] + t * seg[i]) / max(L, 1e-6), tbest)
-            near = smoothstep(0.24, 0.15, dmin)
-            tip = smoothstep(0.80, 0.90, tbest)
-            col = mix(col, PINK, 0.95 * near * tip)
+    # ---------------- embroidered eyebrows above the eyes
+    for s_ in (1, -1):
+        ex, ez = 0.475 * s_, 3.30
+        # a thin arc: distance to a circle of radius 0.235 centred slightly below the brow line
+        rr = np.sqrt(((P[:, 0] - ex) / 1.0) ** 2 + ((P[:, 2] - (ez - 0.30)) / 1.0) ** 2)
+        arc = smoothstep(0.030, 0.008, np.abs(rr - 0.315))
+        arc = arc * smoothstep(0.24, 0.16, np.abs(P[:, 0] - ex))
+        arc = arc * smoothstep(-0.75, -0.95, P[:, 1])
+        col = mix(col, hex2rgb('#6E4B32')[None, :], 0.75 * arc)
 
-    # ---- whip stitches: rings near the wrists/ankles + ear rims
-    dash_field = (0.5 + 0.5 * np.sign(np.sin(np.arctan2(V[:, 1] + 1.5, V[:, 2] - 0.6) * 34)))
-    ankle = smoothstep(0.06, 0.02, np.abs(z - 1.02)) * smoothstep(0.55, 0.75, np.abs(V[:, 0]))
-    col = mix(col, STITCH, 0.85 * ankle * dash_field)
-    dash2 = (0.5 + 0.5 * np.sign(np.sin(np.arctan2(V[:, 1] + 0.85, V[:, 2] - 1.2) * 34)))
-    wrist = smoothstep(0.07, 0.02, np.abs(z - 1.12)) * smoothstep(1.15, 1.32, np.abs(V[:, 0]))
-    col = mix(col, STITCH, 0.8 * wrist * dash2)
-    return col
+    # ---------------- pink sucker dots on the tentacles (reference detail)
+    from plush.body import _TENT_RAW
+    for pts, rr in _TENT_RAW:
+        for side in (1, -1):
+            pl = np.array([[x * side, y, z] for (x, y, z) in pts], np.float32)
+            for k in range(len(pl) - 1):
+                a, bb_ = pl[k], pl[k + 1]
+                ab = bb_ - a
+                t = np.clip(((P - a) @ ab) / (ab @ ab), 0, 1)
+                proj = a + t[:, None] * ab
+                d = np.linalg.norm(P - proj, axis=1)
+                on = smoothstep(rr * 1.25, rr * 1.05, d) * smoothstep(-0.9, -1.0, P[:, 1] - proj[:, 1] * 0)
+                # only the front-facing side of the tentacle
+                front = smoothstep(0.0, -0.25, P[:, 1] - proj[:, 1])
+                ph = (t * np.linalg.norm(ab)) / 0.085
+                dot = smoothstep(0.42, 0.22, np.abs((ph % 1.0) - 0.5))
+                col = mix(col, hex2rgb('#D8A2B8')[None, :], 0.75 * on * front * dot)
+
+    # ---------------- navel dimple
+    dn = np.linalg.norm((P - np.array([0.0, -0.70, 1.30], np.float32)) * np.array([1.0, 0.35, 1.0], np.float32), axis=1)
+    col = mix(col, hex2rgb('#3D6353')[None, :], 0.85 * smoothstep(0.085, 0.035, dn))
+
+    # ---------------- pink pads on the soles (thumbs + toes)
+    front = smoothstep(-0.66, -0.80, P[:, 1]) * smoothstep(0.30, 0.20, np.abs(np.abs(P[:, 0]) - 1.10))
+    for s in (1, -1):
+        # big pad on the sole
+        c = np.array([1.10 * s, -0.88, 0.30], np.float32)
+        dd = np.sqrt((P[:, 0] - c[0]) ** 2 + ((P[:, 2] - c[2]) * 0.85) ** 2)
+        col = mix(col, pink[None, :], 0.95 * smoothstep(0.205, 0.165, dd) * front)
+        # four toe pads along the top edge of the sole
+        for tx, tz, tr in [(-0.255, 0.60, 0.078), (-0.105, 0.645, 0.088), (0.055, 0.635, 0.082), (0.205, 0.575, 0.068)]:
+            c2 = np.array([1.10 * s + tx, -0.88, tz], np.float32)
+            dd = np.sqrt((P[:, 0] - c2[0]) ** 2 + (P[:, 2] - c2[2]) ** 2)
+            col = mix(col, pink[None, :], 0.95 * smoothstep(tr, tr * 0.75, dd) * front)
+
+    # ---------------- pink lining in the ears (inner face of the plate)
+    ax = np.abs(P[:, 0])
+    ear_m = (smoothstep(1.00, 1.16, ax) * smoothstep(2.55, 2.68, P[:, 2]) *
+             smoothstep(0.125, 0.085, P[:, 1]))          # inner face only
+    inset = (smoothstep(1.14, 1.30, ax) * smoothstep(3.44, 3.28, P[:, 2]) *
+             smoothstep(3.02, 2.86, P[:, 2]))
+    col = mix(col, pink[None, :], 0.75 * ear_m * inset)
+    # a stitched pink edge line along the ear rim
+    edge_l = smoothstep(0.020, 0.006, np.abs(P[:, 2] - (2.66 + 0.62 * (ax - 1.05)))) * smoothstep(1.10, 1.25, ax) * smoothstep(3.25, 3.05, P[:, 2])
+    col = mix(col, hex2rgb(STITCH)[None, :], 0.22 * edge_l * smoothstep(0.16, 0.10, P[:, 1]))
+
+    # ---------------- embroidered stars on the legs / arms / belly
+    for s in (1, -1):
+        # thigh: unwrap around a vertical axis
+        t, ang, rad = _limb_coords(P, (1.06 * s, -0.10, 1.30), (1.10 * s, -0.10, 0.20))
+        m = _mask(t, ang, rad, 0.02, 0.80, 0.55)
+        st = star_field(ang * 0.55 + 3.0 * s, t * 1.30, cell=0.19, r_out=0.100, r_in=0.043, density=0.75, seed=s)
+        col = mix(col, cream[None, :], 0.95 * st * m)
+        # arm
+        t, ang, rad = _limb_coords(P, (0.50 * s, -0.02, 1.95), (1.00 * s, -0.56, 1.10))
+        m = _mask(t, ang, rad, 0.05, 0.90, 0.25)
+        st = star_field(ang * 0.35 + 5.0 * s, t * 1.10, cell=0.16, r_out=0.088, r_in=0.037, density=0.7, seed=2 + s)
+        col = mix(col, cream[None, :], 0.95 * st * m)
+    # belly stars
+    belly_m = smoothstep(1.30, 1.45, P[:, 2]) * smoothstep(1.95, 1.80, P[:, 2]) * smoothstep(-0.30, -0.55, P[:, 1])
+    st = star_field(P[:, 0] * 1.1, P[:, 2] * 1.1, cell=0.22, r_out=0.094, r_in=0.040, density=0.48, seed=9.0)
+    col = mix(col, cream[None, :], 0.9 * st * belly_m)
+
+    # ---------------- stitched seams: dashed line down the front centre + round the limbs
+    def stitches(mask_line, along, spacing=0.085, width=0.012, phase=0.0):
+        dash = smoothstep(0.45, 0.30, np.abs(((along / spacing + phase) % 1.0) - 0.5))
+        return mask_line * dash * smoothstep(width, 0.0, np.abs(((along / spacing + phase + 0.25) % 1.0) - 0.5) * 0 + 0.0) + mask_line * dash
+
+    # centre seam from the chest to the nappy
+    line = smoothstep(0.020, 0.006, np.abs(P[:, 0])) * smoothstep(1.05, 1.15, P[:, 2]) * smoothstep(1.95, 1.85, P[:, 2])
+    dd = smoothstep(0.55, 0.75, np.abs(P[:, 1] + 0.55))
+    dash = smoothstep(0.42, 0.22, np.abs(((P[:, 2] / 0.075) % 1.0) - 0.5))
+    col = mix(col, stitch[None, :], 0.85 * line * dash * dd)
+    # side seams on the arms (outer silhouette)
+    for s in (1, -1):
+        t, ang, rad = _limb_coords(P, (0.50 * s, -0.02, 1.95), (1.00 * s, -0.56, 1.10))
+        m = smoothstep(0.05, 0.0, np.abs(ang - np.pi / 2 * s)) * smoothstep(0.25, 0.18, rad) * \
+            smoothstep(0.10, 0.20, t) * smoothstep(0.95, 0.80, t)
+        dash = smoothstep(0.40, 0.20, np.abs(((t / 0.085) % 1.0) - 0.5))
+        col = mix(col, stitch[None, :], 0.9 * m * dash)
+        # leg side seam
+        t, ang, rad = _limb_coords(P, (1.06 * s, -0.10, 1.30), (1.10 * s, -0.10, 0.30))
+        m = smoothstep(0.10, 0.0, np.abs(np.abs(ang) - np.pi / 2)) * smoothstep(0.60, 0.50, rad) * \
+            smoothstep(0.05, 0.15, t) * smoothstep(0.85, 0.70, t)
+        dash = smoothstep(0.40, 0.20, np.abs(((t / 0.08) % 1.0) - 0.5))
+        col = mix(col, stitch[None, :], 0.9 * m * dash)
+
+    return np.clip(col, 0, 1).astype(np.float32)

@@ -44,12 +44,12 @@ def make_object(name, V, F, C, mat):
     return ob
 
 
-def eyelid_mesh(side, tag, R_eye, lat=22, lon=28):
+def eyelid_mesh(side, tag, R_eye, lat=14, lon=26):
     """skin-coloured squashed ellipsoid covering the top of the eyeball (the felt lid)"""
     import plush.body as B
     c = B.EYE_C * np.array([side, 1, 1])
-    rx, ry, rz = R_eye * 1.06, R_eye * 1.06, R_eye * 0.78
-    cz = c[2] + R_eye * 0.34
+    rx, ry, rz = R_eye * 1.02, R_eye * 1.02, R_eye * 0.30
+    cz = c[2] + R_eye * 0.86
     V, F = [], []
     for i in range(1, lat):
         th = math.pi * i / lat
@@ -73,7 +73,7 @@ def eyelid_mesh(side, tag, R_eye, lat=22, lon=28):
     for j in range(ring):
         F.append([base + j, base + (j + 1) % ring, bot])
     V = np.array(V, np.float32)
-    C = np.tile([0.33, 0.58, 0.50], (len(V), 1)).astype(np.float32)
+    C = np.tile([0.30, 0.45, 0.38], (len(V), 1)).astype(np.float32)
     return make_object('lid' + tag, V, np.array(F, np.int64), C, materials.felt_material())
 
 
@@ -93,7 +93,6 @@ def build():
     parts['body'] = make_object('Body', *load_npz('body'), felt)
     parts['wings'] = make_object('Wings', *load_npz('wings'), felt)
     parts['diaper'] = make_object('Diaper', *load_npz('diaper'), cotton)
-    parts['navel'] = make_object('Navel', *load_npz('navel'), felt)
     eyeR = make_object('EyeR', *load_npz('eyeR'), glass)
     eyeL = make_object('EyeL', *load_npz('eyeL'), glass)
     parts['eyeR'], parts['eyeL'] = eyeR, eyeL
@@ -112,7 +111,6 @@ def build():
     R.skin_part(parts['body'], rig, allowed=body_bones, sigma=1.5)
     R.skin_part(parts['diaper'], rig, allowed={'hips', 'spine', 'thighL', 'thighR'}, sigma=1.6)
     R.skin_part(parts['wings'], rig, allowed={'chest', 'wingL', 'wingR', 'spine'}, sigma=1.2)
-    R.skin_part(parts['navel'], rig, allowed={'spine', 'hips'}, sigma=2.5)
     for tag in ('R', 'L'):
         R.skin_part(parts['eye' + tag], rig, allowed={'eye' + tag}, sigma=5.0)
         R.skin_part(parts['lid' + tag], rig, allowed={'lid' + tag}, sigma=5.0)

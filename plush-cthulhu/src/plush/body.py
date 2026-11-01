@@ -1,179 +1,194 @@
-"""SDF anatomy of the felt plush baby-cthulhu (seated pose, from the reference).
+"""Anatomy of the felt Cthulhu baby, measured off the reference image.
 
-Axes:  +X = character's right (image x),  +Y = backwards,  +Z = up.
-Scale: 1 unit = 100 px of the 706x474 reference.  Origin under the bottom.
-The character sits: legs forward (+ feet toward -Y), arms resting on the thighs.
+Coordinate system (identical for every module):
+    1 unit  = 100 px of the reference
+    x = (Xpx - 341.5) / 100      (+x = the doll's left, i.e. right on screen)
+    z = (444   - Ypx) / 100      (0 = ground, +z = up)
+    y                            depth, -y = towards the camera
+
+Reference landmarks driving the constants below (image pixels):
+    head      egg shaped, top 40 (pink tuft), bottom ~255, x 232..452 at eye height
+    eyes      centres (294,172)/(389,172), sclera r 33, iris r 26, pupils huge
+    muzzle    nose at (341,186), 8 tentacles, tips down to z = 1.72
+    ears      thin pointed plates, tips at x 180 / 505, z 2.55..3.55
+    wings     x 164..520, z 1.55..2.80, behind the shoulders
+    body      shoulders y 280, belly y 330, navel (341,331)
+    nappy     white terry cloth, y 336..415
+    legs      thighs x = +-1.15, feet in front of them, pink pads face the camera
 """
 import numpy as np
-from sdf_lib import smin, smax, ell, ell_rot, sphere, round_cone, chain
 
-# ------------------------------------------------------------------ key masses
-HEAD_C = np.array([0.0, 0.02, 2.94])
-HEAD_R = np.array([1.26, 1.10, 0.90])
-EYE_C = np.array([0.56, -0.92, 2.58])
-EYE_R = 0.37
+from sdf_lib import smin, smax, ell, ell_rot, sphere, round_cone, chain, poly2d
 
-# feet centres (front paws), used by the animation rig
-FOOT_C = np.array([0.98, -1.95, 0.36])
+# ------------------------------------------------------------------ landmarks
+HEAD_C = np.array([0.0, 0.12, 2.90], np.float32)
+HEAD_R = np.array([1.10, 1.00, 1.22], np.float32)
+
+EYE_C = np.array([0.475, -1.00, 3.12], np.float32)
+EYE_R = 0.325
+
+MUZZLE_C = np.array([0.0, -0.80, 2.48], np.float32)
+MUZZLE_R = np.array([0.58, 0.44, 0.48], np.float32)
+
+CHEST_C = np.array([0.0, 0.00, 1.72], np.float32)
+CHEST_R = np.array([0.62, 0.56, 0.56], np.float32)
+BELLY_C = np.array([0.0, -0.04, 1.16], np.float32)
+BELLY_R = np.array([0.74, 0.62, 0.54], np.float32)
+
+DIA_TOP, DIA_BOT = 1.12, 0.16
+NAVEL_C = np.array([0.0, -0.62, 1.30], np.float32)
+
+# thigh centre / foot centre (screen right side, mirrored for the left)
+THIGH_C = np.array([1.06, 0.00, 0.54], np.float32)
+THIGH_R = np.array([0.45, 0.40, 0.46], np.float32)
+FOOT_C = np.array([1.10, -0.50, 0.42], np.float32)
+FOOT_R = np.array([0.46, 0.36, 0.42], np.float32)
+
+HAND_C = np.array([1.12, -1.20, 1.16], np.float32)
+
+# ------------------------------------------------------------------ tentacles
+# Eight tentacles hanging off the lower rim of the muzzle, traced from the
+# reference: thin, mostly vertical, the outer pair curling outwards.
+# (root, mid, tip) in model space; radii in TENT_R
+_TENT_RAW = [
+    # inner pair: hangs straight down over the mouth
+    ([(0.08, -1.20, 2.64), (0.10, -1.27, 2.38), (0.13, -1.27, 2.10), (0.17, -1.22, 1.88)], 0.082),
+    ([(0.25, -1.19, 2.62), (0.27, -1.27, 2.34), (0.30, -1.29, 2.04), (0.34, -1.24, 1.80)], 0.088),
+    ([(0.42, -1.14, 2.60), (0.46, -1.23, 2.32), (0.52, -1.25, 2.02), (0.60, -1.20, 1.76)], 0.080),
+    # outer pair: hooks outwards at the tip, like the reference
+    ([(0.58, -1.06, 2.58), (0.66, -1.15, 2.32), (0.76, -1.17, 2.06), (0.92, -1.09, 1.86)], 0.072),
+]
+TENT = {i + 1: (np.array(pts, np.float32), rr) for i, (pts, rr) in enumerate(_TENT_RAW)}
+TENT_R = {k: v[1] for k, v in TENT.items()}
 
 
 def _sym(p):
-    return np.stack([np.abs(p[:, 0]), p[:, 1], p[:, 2]], -1)
+    q = p.copy()
+    q[:, 0] = np.abs(q[:, 0])
+    return q
 
 
-# ---------------------------------------------------------------------- torso
 def torso(p):
-    pm = _sym(p)
-    # single soft pear-shaped body (no separate pelvis: the plush is one piece)
-    d = ell(pm, (0.0, 0.06, 1.18), (0.94, 0.86, 1.00))                  # belly barrel
-    d = smin(d, ell(pm, (0.0, 0.02, 0.55), (1.02, 0.94, 0.55)), 0.32)   # seated base
-    d = smin(d, ell(pm, (0.0, -0.34, 1.32), (0.80, 0.60, 0.60)), 0.32)  # tummy
-    d = smin(d, ell(pm, (0.0, 0.02, 1.92), (0.74, 0.70, 0.34)), 0.30)   # shoulder shelf / neck
+    d = ell(p, CHEST_C, CHEST_R)
+    d = smin(d, ell(p, BELLY_C, BELLY_R), 0.22)
+    d = smax(d, -p[:, 2] + 0.08, 0.16)
     return d
 
 
-# ----------------------------------------------------------------------- legs
 def legs(p):
-    pm = _sym(p)
-    # thigh going forward-out, knee at the front, foot pointing up-forward
-    thigh = chain(pm, [(0.60, -0.20, 0.78), (0.92, -0.90, 0.66), (1.10, -1.45, 0.56)],
-                  [0.54, 0.50, 0.46], 0.10)
-    shin = chain(pm, [(1.10, -1.45, 0.56), (1.12, -1.72, 0.56)], [0.46, 0.44], 0.10)
-    d = smin(thigh, shin, 0.20)
-    # paw/foot: rounded pad facing the camera, slightly tilted up
-    foot = ell_rot(pm, (1.12, -1.92, 0.52), (0.50, 0.32, 0.48), (0.55, 0, 0))
-    d = smin(d, foot, 0.16)
+    """seated: fat felt thigh, and a rounded foot in front of it, sole towards us"""
+    d = np.full(len(p), 1e9, np.float32)
+    q = _sym(p)
+    thigh = ell(q, THIGH_C, THIGH_R)
+    foot = ell(q, FOOT_C, FOOT_R)
+    d = smin(thigh, foot, 0.12)
+    return smin(d, _sym_neg(p), 0.20)
+
+
+def _sym_neg(p):
+    """helper: mirror the leg field to both sides"""
+    q = p.copy(); q[:, 0] = -np.abs(q[:, 0]) - 0.0
+    return np.full(len(p), 1e9)
+
+
+def legs_both(p):
+    q = p.copy(); q[:, 0] = np.abs(q[:, 0])
+    d = smin(ell(q, THIGH_C, THIGH_R), ell(q, FOOT_C, FOOT_R), 0.12)
+    d = smin(d, ell(q, (1.04, -0.26, 0.80), (0.40, 0.36, 0.30)), 0.16)   # shin bridge
     return d
 
 
 def toes(p):
-    """four toe bumps on each paw (geometry only, colour handled in bake)"""
-    pm = _sym(p)
-    d = None
-    for i, (tx, tz, tr) in enumerate([(0.80, 0.66, 0.155), (1.02, 0.74, 0.165),
-                                     (1.24, 0.72, 0.16), (1.44, 0.60, 0.14)]):
-        ty = -2.24 + 0.02 * i
-        s = sphere(pm, (tx, ty, tz), tr)
-        d = s if d is None else smin(d, s, 0.06)
+    """four toe bumps on the upper edge of each sole"""
+    q = p.copy(); q[:, 0] = np.abs(q[:, 0])
+    d = np.full(len(p), 1e9, np.float32)
+    for tx, tz, tr in [(-0.20, 0.06, 0.062), (-0.06, 0.09, 0.070), (0.07, 0.08, 0.066), (0.18, 0.03, 0.056)]:
+        d = smin(d, sphere(q, (1.10 + tx * 0.85, -0.84, 0.44 + tz), tr), 0.04)
     return d
 
 
-# ---------------------------------------------------------------------- arms
 def arms(p):
-    pm = _sym(p)
-    # upper arm clamped to the side, forearm resting on the thigh, paw hanging
-    d = chain(pm, [(0.88, -0.16, 1.68), (1.34, -0.60, 1.32), (1.36, -1.00, 1.00)],
-              [0.38, 0.35, 0.32], 0.10)
-    paw = ell_rot(pm, (1.38, -1.18, 0.82), (0.32, 0.27, 0.32), (0.5, 0, 0))
-    d = smin(d, paw, 0.12)
-    return d
+    q = p.copy(); q[:, 0] = np.abs(q[:, 0])
+    sh = np.array([0.50, -0.02, 1.92], np.float32)
+    el = np.array([0.98, -0.60, 1.52], np.float32)
+    wr = np.array([1.08, -1.02, 1.20], np.float32)
+    c = chain(q, [sh, el, wr], [0.24, 0.215, 0.19], 0.06)
+    # little fist on the knee
+    c = smin(c, ell(q, HAND_C, np.array([0.24, 0.21, 0.24], np.float32)), 0.10)
+    return c
 
 
-def paw_fingers(p):
-    pm = _sym(p)
-    d = None
-    for i, (dx, dy, dz, r) in enumerate([(-0.12, -0.16, -0.06, 0.10),
-                                         (0.02, -0.20, -0.05, 0.105),
-                                         (0.16, -0.17, -0.02, 0.10),
-                                         (0.26, -0.10, 0.04, 0.09)]):
-        s = sphere(pm, (1.32 + dx, -1.24 + dy, 0.72 + dz), r)
-        d = s if d is None else smin(d, s, 0.05)
-    return d
-
-
-# ---------------------------------------------------------------------- head
 def head(p):
-    pm = _sym(p)
-    d = ell(pm, HEAD_C, HEAD_R)                                   # cranium dome
-    d = smin(d, ell(pm, (0.0, 0.34, 2.68), (1.14, 0.96, 0.84)), 0.30)   # back of the skull
-    d = smin(d, ell(pm, (0.0, -0.10, 2.40), (1.24, 1.04, 0.68)), 0.30)  # cheeks / jaw
-    d = smin(d, ell(pm, (0.0, -0.86, 2.26), (0.56, 0.44, 0.34)), 0.24)  # muzzle
-    # brow ridge over the eyes
-    d = smin(d, ell(pm, (0.48, -0.84, 2.66), (0.36, 0.30, 0.13)), 0.10)
-    # flat-ish top / forehead
-    d = smin(d, ell(pm, (0.0, -0.04, 3.34), (1.02, 0.90, 0.50)), 0.28)
+    d = ell(p, HEAD_C, HEAD_R)
+    d = smin(d, ell(p, (0.0, -0.34, 3.00), (1.00, 0.88, 1.10)), 0.20)
+    # face plate: brings the brow/eye area forward so the eyes sit in the face
+    d = smin(d, ell(p, (0.0, -0.34, 3.04), (1.03, 0.74, 0.94)), 0.24)
+    # brow ridges: two soft felt pads above the eyes (reference has clear brows)
+    for s_ in (1.0, -1.0):
+        d = smin(d, ell_rot(p, (0.50 * s_, -1.02, 3.38), (0.30, 0.16, 0.10),
+                            np.array([0.0, 0.0, -0.16 * s_], np.float32)), 0.16)
+    for s in (1.0, -1.0):
+        d = smin(d, ell(p, (0.60 * s, -0.66, 2.64), (0.30, 0.28, 0.30)), 0.18)
+    d = smin(d, ell(p, MUZZLE_C, MUZZLE_R), 0.30)
+    d = smin(d, ell(p, (0.0, -0.68, 2.26), (0.40, 0.34, 0.24)), 0.20)   # chin pad
     return d
 
 
 def ears(p):
-    pm = _sym(p)
-    base = ell_rot(pm, (1.10, 0.14, 2.98), (0.36, 0.17, 0.44), (0.0, 0.05, 0.12))
-    mid = ell_rot(pm, (1.52, 0.20, 3.16), (0.42, 0.15, 0.34), (0.0, -0.28, 0.30))
-    tip = ell_rot(pm, (1.92, 0.26, 3.34), (0.26, 0.10, 0.20), (0.0, -0.50, 0.40))
-    d = smin(base, mid, 0.14)
-    return smin(d, tip, 0.12)
+    """thin pointed felt plates sticking out and up, pink lining inside"""
+    q = p.copy(); q[:, 0] = np.abs(q[:, 0])
+    base = np.array([0.92, 0.12, 2.62], np.float32)
+    mid = np.array([1.34, 0.18, 2.98], np.float32)
+    tip = np.array([1.62, 0.24, 3.42], np.float32)
+    c = chain(q, [base, mid, tip], [0.34, 0.27, 0.055], 0.10)
+    # flatten along y: ears are plates, not tubes
+    c = np.maximum(c, np.abs(q[:, 1] - 0.16) - 0.105)
+    # slight forward cup
+    c = smin(c, ell(q, (1.22, 0.10, 2.96), (0.34, 0.16, 0.34)), 0.12)
+    return c
 
 
 def tentacles(p):
-    """8 tentacles hanging from the muzzle; return (sdf, ids) where ids are centre-line indices"""
-    pm = _sym(p)
-    d = None
-    for cl, radii in TENTACLES:
-        c = chain(pm, cl, radii, 0.09)
-        d = c if d is None else smin(d, c, 0.06)
+    q = p.copy(); q[:, 0] = np.abs(q[:, 0])
+    d = np.full(len(p), 1e9, np.float32)
+    for i in range(1, 5):
+        pts, r = TENT[i]
+        c = chain(q, list(pts), [r * 1.15, r * 1.0, r * 0.80, r * 0.34], 0.02)
+        d = smin(d, c, 0.045)
     return d
 
 
-def TENT(i):
-    return TENTACLES[i]
+def nose(p):
+    q = p.copy(); q[:, 0] = np.abs(q[:, 0])
+    return sphere(q, (0.16, -1.19, 2.68), 0.075)
 
 
-# centre-lines in the +x half; 4 pairs -> ends in loops / curls
-TENTACLES = [
-    # inner pair: hangs in front of the chin, tip curls outward
-    ([(0.18, -1.16, 2.20), (0.20, -1.34, 2.00), (0.24, -1.46, 1.80),
-      (0.38, -1.48, 1.68), (0.52, -1.42, 1.70)], [0.140, 0.136, 0.124, 0.100, 0.070]),
-    # second pair (longest)
-    ([(0.52, -1.14, 2.20), (0.56, -1.32, 1.96), (0.62, -1.44, 1.72),
-      (0.74, -1.46, 1.56), (0.88, -1.40, 1.52)], [0.145, 0.140, 0.128, 0.104, 0.072]),
-    # third pair, curls up at the tip
-    ([(0.86, -1.04, 2.16), (0.96, -1.24, 1.94), (1.04, -1.32, 1.74),
-      (1.16, -1.30, 1.62), (1.26, -1.20, 1.66)], [0.140, 0.136, 0.124, 0.100, 0.070]),
-    # outer pair, sweeps out to the cheek
-    ([(1.08, -0.84, 2.12), (1.22, -1.00, 1.94), (1.34, -1.06, 1.80),
-      (1.46, -1.00, 1.78)], [0.132, 0.126, 0.112, 0.082]),
-]
+def neck(p):
+    """soft felt column that blends the head into the shoulders (no lollipop gap)"""
+    return ell(p, (0.0, 0.00, 2.16), (0.60, 0.56, 0.42))
 
 
 def body_sdf_raw(p):
     d = torso(p)
-    d = smin(d, legs(p), 0.16)
-    d = smin(d, toes(p), 0.06)
-    d = smin(d, arms(p), 0.10)
-    d = smin(d, paw_fingers(p), 0.06)
-    h = head(p)
-    d = smin(d, h, 0.30)
-    d = smin(d, ears(p), 0.16)
-    d = smin(d, tentacles(p), 0.07)
-    return d
-
-
-def body_sdf(p):
-    d = body_sdf_raw(p)
-    d = smax(d, -eyes_carve(p), 0.03)
-    return d
-
-
-def eyes_carve(p):
-    """local socket + straight upper lid line, limited to a small ball around each eye"""
-    pm = _sym(p)
-    c = EYE_C
-    sock = sphere(pm, c + np.array([0.0, 0.12, 0.0]), EYE_R + 0.02)
-    # lid plane, but only inside a ball around the eye so the face keeps its shape
-    lid = (c[2] + 0.26) - (pm[:, 2] - c[2]) * 0.42 - c[2]
-    ball = sphere(pm, c, 0.62)
-    lid_local = smax(lid, ball, 0.05)
-    out = smax(sock, lid_local, 0.05)
-    return out
-
-
-def head_only(p):
-    d = head(p)
-    d = smin(d, ears(p), 0.16)
+    d = smin(d, legs_both(p), 0.20)
+    d = smin(d, toes(p), 0.08)
+    d = smin(d, arms(p), 0.16)
+    d = smin(d, neck(p), 0.28)
+    d = smin(d, head(p), 0.14)
+    d = smin(d, ears(p), 0.10)
+    d = smin(d, tentacles(p), 0.08)
+    d = np.minimum(d, nose(p))
     return d
 
 
 def eyes_sockets(p):
-    """carve shallow sockets so eyeballs get a fabric lid rim"""
-    pm = _sym(p)
-    return sphere(pm, EYE_C + np.array([0.0, 0.14, 0.0]), EYE_R + 0.04)
+    q = p.copy(); q[:, 0] = np.abs(p[:, 0])
+    return sphere(q, EYE_C + np.array([0, 0.09, 0]), EYE_R + 0.012)
+
+
+def body_sdf(p):
+    return smax(body_sdf_raw(p), -eyes_sockets(p), 0.025)
+
+
+def head_only(p):
+    return smin(head(p), ears(p), 0.10)
