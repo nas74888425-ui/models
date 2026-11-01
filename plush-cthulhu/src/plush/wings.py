@@ -5,17 +5,17 @@ from sdf_lib import smin, smax, poly2d, ell
 
 # right-hand wing outline in model x/z, traced from the reference
 WING_POLY = [
-    (0.58, 2.32), (0.86, 2.34), (1.16, 2.26), (1.42, 2.10), (1.60, 1.90),
-    (1.70, 1.66), (1.56, 1.66), (1.54, 1.44), (1.40, 1.48), (1.32, 1.28),
-    (1.18, 1.38), (1.06, 1.22), (0.94, 1.40), (0.80, 1.48), (0.68, 1.62),
-    (0.58, 1.90),
+    (0.70, 2.46), (1.06, 2.50), (1.44, 2.42), (1.74, 2.24), (1.94, 1.98),
+    (2.00, 1.66), (1.92, 1.36), (1.80, 1.48), (1.72, 1.14), (1.56, 1.32),
+    (1.46, 0.98), (1.28, 1.18), (1.16, 0.92), (1.00, 1.14), (0.88, 0.98),
+    (0.74, 1.30), (0.66, 1.72),
 ]
-Y_BASE = 0.34          # how far behind the body the wing sits
+Y_BASE = 0.40          # how far behind the body the wing sits
 THICK = 0.055
 
 # finger struts: from the shoulder joint to the wing tips (drawn as felt ribs)
-TIPS = [(1.66, 1.70), (1.52, 1.42), (1.30, 1.26), (1.00, 1.36)]
-ROOT = (0.62, 2.20)
+TIPS = [(2.00, 1.72), (1.74, 1.24), (1.46, 1.02), (1.14, 1.18)]
+ROOT = (0.76, 2.34)
 
 
 def wing_sdf(p):

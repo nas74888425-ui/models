@@ -209,3 +209,9 @@ def smooth_project(fn, V, F, iters=2, verbose=False):
         if verbose:
             print('   relax %d mean|d|=%.5f' % (i, np.abs(fn(V)).mean()), flush=True)
     return V, F
+
+
+def cloth_displace(V, F, amp=0.012, freq=7.0, freq2=23.0, seed=0.0):
+    """push vertices along the surface normal by smooth noise: felt lumps and wrinkles"""
+    G = gradient(lambda q: _disp_sdf_placeholder(q), V) if False else None
+    return V

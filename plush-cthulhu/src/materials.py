@@ -6,7 +6,7 @@ def _principled(nt):
     return nt.nodes.get('Principled BSDF')
 
 
-def felt_material(name='felt', rough=0.93, sheen=0.75, bump=0.85, fibre=0.18):
+def felt_material(name='felt', rough=0.96, sheen=0.42, bump=1.0, fibre=0.20):
     mat = bpy.data.materials.get(name)
     if mat:
         return mat

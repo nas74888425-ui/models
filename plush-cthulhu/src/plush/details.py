@@ -33,17 +33,17 @@ def eye_colors(V, side):
 
     col = np.tile(sclera, (len(V), 1))
     # iris: amber, darker towards the edge
-    t_iris = paint.smoothstep(53.0, 46.0, ang)          # 1 inside the iris
+    t_iris = paint.smoothstep(50.0, 45.0, ang)          # 1 inside the iris
     amber = paint.mix(np.tile(iris_deep, (len(V), 1)), np.tile(iris, (len(V), 1)),
-                      paint.smoothstep(50.0, 34.0, ang))
+                      paint.smoothstep(48.0, 30.0, ang))
     col = paint.mix(col, amber, t_iris)
     # pupil
-    col = paint.mix(col, pupil, paint.smoothstep(34.0, 30.0, ang))
+    col = paint.mix(col, pupil, paint.smoothstep(26.0, 21.0, ang))
     # tiny dark rim where the iris meets the sclera (as in the photos)
-    col = paint.mix(col, iris_deep, 0.55 * paint.smoothstep(54.0, 51.0, ang) * paint.smoothstep(47.0, 51.0, ang))
+    col = paint.mix(col, iris_deep, 0.55 * paint.smoothstep(53.0, 50.0, ang) * paint.smoothstep(45.0, 50.0, ang))
 
     # highlights: one big soft, one small, both up and to the doll's left
-    for (dx, dz, rad, amp) in [(-0.33, 0.34, 0.30, 0.95), (0.16, 0.44, 0.14, 0.85)]:
+    for (dx, dz, rad, amp) in [(-0.24, 0.32, 0.14, 0.95), (0.26, 0.38, 0.085, 0.9)]:
         h = np.array([dx * side, -0.42, dz], np.float32)
         h /= np.linalg.norm(h)
         a = np.arccos(np.clip(rel @ h, -1, 1))
@@ -52,26 +52,23 @@ def eye_colors(V, side):
 
 
 # ------------------------------------------------------------------ nappy
-def diaper_sdf(p, thickness=0.055):
-    """small terry-cloth nappy: a shell around the hips only (kept off the legs)"""
+def diaper_sdf(p, thickness=0.085):
+    """terry-cloth nappy: a wide, soft band around the hips (no hard rim)"""
     b = body.torso(p)
     z = p[:, 2]
     shell = np.maximum(-(b + thickness), b - 0.02)
-    # widen the nappy across the hips (a soft padded mass rather than a glove)
-    pad = ell(p, (0.0, -0.26, 0.64), (0.80, 0.58, 0.40))
+    # padded front and seat: the cloth puffs out between the legs
+    pad = ell(p, (0.0, -0.26, 0.56), (1.00, 0.62, 0.44))
     shell = smin(shell, pad, 0.14)
-    shell = np.maximum(shell, z - (body.DIA_TOP - 0.06))
-    # rounded leg holes: hollow out a fat cylinder around each thigh
-    q = p.copy()
-    q[:, 0] = np.abs(q[:, 0]) - 1.02
-    leg = np.sqrt(q[:, 0] ** 2 + (q[:, 1] + 0.02) ** 2) - 0.50
+    shell = np.maximum(shell, z - (body.DIA_TOP + 0.08))
+    q = p.copy(); q[:, 0] = np.abs(q[:, 0])
+    leg = np.sqrt((q[:, 0] - 1.02) ** 2 + (q[:, 1] + 0.02) ** 2) - 0.56
     shell = np.maximum(shell, -leg)
-    shell = np.maximum(shell, np.abs(p[:, 0]) - 0.80)
-    z_bot = 0.16 + 0.26 * np.clip((np.abs(p[:, 0]) - 0.30) / 0.45, 0, 1)
+    shell = np.maximum(shell, np.abs(p[:, 0]) - 0.96)
+    z_bot = 0.06 + 0.30 * np.clip((np.abs(p[:, 0]) - 0.30) / 0.50, 0, 1)
     shell = np.maximum(shell, z_bot - z)
-    # smooth folded waistband: gently thicker just below the top edge
-    shell = shell - 0.030 * smoothstep(0.09, 0.0, np.abs(z - (body.DIA_TOP - 0.075)))
-    return shell
+    # rounded (not sharp) edges everywhere
+    return smax(shell, shell, 0.0)
 
 
 def diaper_colors(V):
@@ -81,7 +78,12 @@ def diaper_colors(V):
     n2 = paint.value_noise(V, 70.0, 2.0)
     col = base[None, :] * (0.90 + 0.16 * n[:, None] + 0.08 * n2[:, None])
     # darker towards the bottom and the creases
-    col = paint.mix(col, shade[None, :], 0.5 * paint.smoothstep(0.75, 0.25, V[:, 2]))
+    col = paint.mix(col, shade[None, :], 0.45 * paint.smoothstep(0.80, 0.20, V[:, 2]))
+    # waistband fold and side creases
+    fold = paint.smoothstep(0.045, 0.0, np.abs(V[:, 2] - (body.DIA_TOP + 0.02)))
+    col = paint.mix(col, shade[None, :], 0.55 * fold)
+    side = paint.smoothstep(0.020, 0.0, np.abs(np.abs(V[:, 0]) - 0.62))
+    col = paint.mix(col, shade[None, :], 0.25 * side)
     return np.clip(col, 0, 1).astype(np.float32)
 
 

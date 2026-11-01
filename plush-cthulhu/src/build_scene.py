@@ -98,6 +98,8 @@ def build():
     parts['eyeR'], parts['eyeL'] = eyeR, eyeL
     lidR = eyelid_mesh(-1, 'R', R_lid)
     lidL = eyelid_mesh(1, 'L', R_lid)
+    for _l in (lidR, lidL):
+        _l.hide_render = True          # felt lids read as hoods; eyes must stay round
     parts['lidR'], parts['lidL'] = lidR, lidL
 
     rig = R.create_rig()

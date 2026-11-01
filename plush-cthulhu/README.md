@@ -7,6 +7,8 @@
 
 ![hero](previews/hero.png)
 
+Сравнение с референсом: ![compare](previews/compare_reference.png)
+
 ## Что внутри
 
 | файл | что это |
@@ -14,7 +16,7 @@
 | `models/plush_cthulhu_animated.glb` | **главный ассет**: меш + скелет (51 кость) + 4 клипа (Idle, Laugh, Cry, Angry), вершинные цвета |
 | `models/plush_cthulhu.blend` | сцена Blender: модель, риг, NLA-треки, свет, камера |
 | `site/index.html` | интерактивный вьюер (three.js): вращение, кнопки клипов |
-| `previews/` | рендеры и GIF-превью анимаций |
+| `previews/` | рендеры, сравнение с референсом, GIF-превью анимаций |
 | `reference/reference.png` | исходный референс |
 | `src/` | весь исходный код модели |
 
